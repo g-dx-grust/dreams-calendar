@@ -1,0 +1,94 @@
+@import "tailwindcss";
+
+/*
+ * dreaMs カラートークン（G-DX For スケジュール 専用）
+ * Why: 親 G-DX ルールではなく dreaMs ルール準拠（CLAUDE.md §A 承認済み）
+ * - Primary: #3370FF（Lark Blue）
+ * - 角丸: 4px / 6px のみ。8px 以上は使用禁止
+ * - 影: 原則使用禁止。1px ボーダーで領域を区切る
+ */
+
+:root {
+  --color-surface: #ffffff;
+  --color-background: #f5f6f7;
+
+  --color-text-strong: #1f2329;
+  --color-text-mid: #646a73;
+  --color-text-weak: #8f959e;
+  --color-text-disabled: #c5c8ce;
+
+  --color-border: #dee0e3;
+  --color-border-strong: #c5c8ce;
+
+  --color-primary: #3370ff;
+  --color-primary-hover: #4e83ff;
+  --color-primary-active: #245bdb;
+  --color-primary-soft: #e7f0ff;
+
+  --color-success: #34c724;
+  --color-warning: #ff8800;
+  --color-danger: #f54a45;
+
+  --radius-s: 4px;
+  --radius-m: 6px;
+
+  --width-content-max: 1200px;
+  --header-height: 56px;
+  --sidenav-width: 240px;
+
+  --space-s: 8px;
+  --space-m: 16px;
+  --space-l: 24px;
+
+  --shadow-focus: 0 0 0 2px rgba(51, 112, 255, 0.24);
+}
+
+@theme inline {
+  --color-surface: var(--color-surface);
+  --color-background: var(--color-background);
+  --color-text-strong: var(--color-text-strong);
+  --color-text-mid: var(--color-text-mid);
+  --color-text-weak: var(--color-text-weak);
+  --color-border: var(--color-border);
+  --color-border-strong: var(--color-border-strong);
+  --color-primary: var(--color-primary);
+  --color-primary-hover: var(--color-primary-hover);
+  --color-primary-active: var(--color-primary-active);
+  --color-primary-soft: var(--color-primary-soft);
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-danger: var(--color-danger);
+  --radius-s: var(--radius-s);
+  --radius-m: var(--radius-m);
+  --font-sans: var(--font-noto-sans-jp), "Noto Sans JP", sans-serif;
+}
+
+html,
+body {
+  background: var(--color-background);
+  color: var(--color-text-strong);
+  font-family: var(--font-noto-sans-jp), "Noto Sans JP", sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+*:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  border-radius: var(--radius-s);
+}
+
+/*
+ * 時刻入力のネイティブ「時計アイコン」を非表示
+ * Why: カスタムの 15 分ピッカーボタンを別途出し、ネイティブの 1 分単位ドロップダウンを抑止する
+ */
+input[type="time"].gdx-no-native-time-picker::-webkit-calendar-picker-indicator {
+  display: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+input[type="time"].gdx-no-native-time-picker {
+  -webkit-appearance: none;
+  appearance: none;
+}
