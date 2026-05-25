@@ -1,17 +1,13 @@
-import Link from "next/link";
-import { Plus } from "lucide-react";
 import { getSession } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
 import { AdminNav } from "@/components/admin/admin-nav";
-import { AdminDeleteButton } from "@/components/admin/delete-button";
 import { listUsers } from "@/lib/user-store";
 import { listSchedules } from "@/lib/schedule-store";
-import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import { deleteUserAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
+// 社員は kanri-system / Lark 連携で管理する共有データ（CLAUDE.md §D）。
+// 本画面は参照専用。追加・編集・削除は kanri-system 側で行う。
 export default async function UsersAdminPage() {
   const session = await getSession();
   const users = listUsers();
@@ -38,17 +34,13 @@ export default async function UsersAdminPage() {
           </h1>
           <AdminNav active="/admin/users" />
 
-          <div className="flex items-baseline justify-between mb-3">
+          <div className="mb-3 space-y-1">
             <p className="text-[13px] text-[var(--color-text-mid)]">
               登録社員数：{users.length} 名
             </p>
-            <Link
-              href="/admin/users/new"
-              className={cn(buttonVariants({ variant: "primary", size: "md" }))}
-            >
-              <Plus size={16} />
-              社員を追加する
-            </Link>
+            <p className="text-[12px] text-[var(--color-text-weak)]">
+              社員情報は kanri-system および Lark 連携で管理されます。本画面は参照専用です。
+            </p>
           </div>
 
           <div className="bg-white border border-[var(--color-border)] rounded-[var(--radius-m)] overflow-hidden">
@@ -58,14 +50,13 @@ export default async function UsersAdminPage() {
                   <Th>名前</Th>
                   <Th>アバター</Th>
                   <Th align="right">関連予定数</Th>
-                  <Th align="right">操作</Th>
                 </tr>
               </thead>
               <tbody>
                 {users.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={4}
+                      colSpan={3}
                       className="px-3 py-6 text-center text-[var(--color-text-weak)]"
                     >
                       社員が登録されていません。
@@ -80,12 +71,9 @@ export default async function UsersAdminPage() {
                         className="border-b border-[var(--color-border)] last:border-b-0"
                       >
                         <Td>
-                          <Link
-                            href={`/admin/users/${u.id}`}
-                            className="text-[var(--color-primary)] hover:underline font-medium"
-                          >
+                          <span className="font-medium text-[var(--color-text-strong)]">
                             {u.name}
-                          </Link>
+                          </span>
                         </Td>
                         <Td>
                           {u.avatarUrl ? (
@@ -99,17 +87,6 @@ export default async function UsersAdminPage() {
                           )}
                         </Td>
                         <Td align="right">{count}</Td>
-                        <Td align="right">
-                          <div className="inline-flex items-center gap-2">
-                            <Link
-                              href={`/admin/users/${u.id}`}
-                              className="text-[var(--color-primary)] hover:underline"
-                            >
-                              編集
-                            </Link>
-                            <DeleteUserButton id={u.id} count={count} />
-                          </div>
-                        </Td>
                       </tr>
                     );
                   })
@@ -120,17 +97,6 @@ export default async function UsersAdminPage() {
         </div>
       </main>
     </div>
-  );
-}
-
-function DeleteUserButton({ id, count }: { id: string; count: number }) {
-  const message =
-    count > 0
-      ? `この社員には ${count} 件の予定が紐づいています。削除すると予定の担当者が空欄になります。\n削除してよろしいですか？`
-      : "この社員を削除します。よろしいですか？";
-  const action = deleteUserAction.bind(null, id);
-  return (
-    <AdminDeleteButton action={action} confirmMessage={message} size="sm" />
   );
 }
 
