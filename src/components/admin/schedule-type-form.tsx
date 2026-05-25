@@ -2,18 +2,20 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import { Check } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SCHEDULE_TYPE_PALETTE } from "@/lib/color-palette";
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
 const formSchema = z.object({
   name: z.string().min(1, "種別名を入力してください").max(50),
-  color: z.string().regex(HEX_RE, "色は #RRGGBB 形式で指定してください"),
+  color: z.string().regex(HEX_RE, "色を選択してください"),
 });
 
 export type ScheduleTypeFormValues = z.infer<typeof formSchema>;
@@ -44,7 +46,7 @@ export function ScheduleTypeForm({
     formState: { errors },
   } = useForm<ScheduleTypeFormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { name: "", color: "#3370FF", ...defaultValues },
+    defaultValues: { name: "", color: SCHEDULE_TYPE_PALETTE[5], ...defaultValues },
   });
 
   const colorValue = watch("color");
@@ -85,24 +87,38 @@ export function ScheduleTypeForm({
         <Label>
           色 <span className="text-[var(--color-danger)]">*</span>
         </Label>
-        <div className="flex items-center gap-3">
-          <input
-            type="color"
-            value={HEX_RE.test(colorValue ?? "") ? colorValue : "#3370FF"}
-            onChange={(e) =>
-              setValue("color", e.target.value.toUpperCase(), {
-                shouldValidate: true,
-              })
-            }
-            className="h-9 w-12 border border-[var(--color-border)] rounded-[var(--radius-s)] cursor-pointer"
-            aria-label="色を選択"
-          />
-          <Input
-            {...register("color")}
-            placeholder="#3370FF"
-            className="font-mono"
-            aria-invalid={Boolean(errors.color)}
-          />
+        <input type="hidden" {...register("color")} />
+        <div className="flex flex-wrap gap-2">
+          {SCHEDULE_TYPE_PALETTE.map((c) => {
+            const selected = colorValue === c;
+            return (
+              <button
+                key={c}
+                type="button"
+                onClick={() =>
+                  setValue("color", c, { shouldValidate: true, shouldDirty: true })
+                }
+                aria-label={`色を ${c} に設定`}
+                aria-pressed={selected}
+                title={c}
+                className={
+                  "relative w-8 h-8 rounded-[var(--radius-s)] border transition-shadow " +
+                  (selected
+                    ? "border-[var(--color-text-strong)] ring-2 ring-[var(--color-primary)] ring-offset-1"
+                    : "border-black/10 hover:border-[var(--color-text-mid)]")
+                }
+                style={{ background: c }}
+              >
+                {selected ? (
+                  <Check
+                    size={16}
+                    className="absolute inset-0 m-auto"
+                    color={isLight(c) ? "#1F2329" : "#fff"}
+                  />
+                ) : null}
+              </button>
+            );
+          })}
         </div>
         {errors.color ? (
           <p className="text-[12px] text-[var(--color-danger)]">
@@ -111,16 +127,13 @@ export function ScheduleTypeForm({
         ) : null}
       </div>
 
-      {/* プレビュー */}
       <div className="space-y-1.5">
         <Label>プレビュー</Label>
         <div className="bg-[var(--color-background)] border border-[var(--color-border)] rounded-[var(--radius-s)] p-3">
           <span
             className="inline-block px-2 py-1 text-[12px] leading-tight border border-black/10 rounded-[var(--radius-s)]"
             style={{
-              background: HEX_RE.test(colorValue ?? "")
-                ? colorValue
-                : "#646A73",
+              background: HEX_RE.test(colorValue ?? "") ? colorValue : "#646A73",
               color: isLight(colorValue ?? "") ? "#1F2329" : "#fff",
             }}
           >

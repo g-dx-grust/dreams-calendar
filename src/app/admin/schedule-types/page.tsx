@@ -59,7 +59,6 @@ export default async function ScheduleTypesAdminPage() {
                 <tr>
                   <Th>プレビュー</Th>
                   <Th>種別名</Th>
-                  <Th>カラー</Th>
                   <Th align="right">関連予定数</Th>
                   <Th align="right">操作</Th>
                 </tr>
@@ -68,7 +67,7 @@ export default async function ScheduleTypesAdminPage() {
                 {types.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={5}
+                      colSpan={4}
                       className="px-3 py-6 text-center text-[var(--color-text-weak)]"
                     >
                       予定種別が登録されていません。
@@ -100,11 +99,6 @@ export default async function ScheduleTypesAdminPage() {
                           >
                             {t.name}
                           </Link>
-                        </Td>
-                        <Td>
-                          <code className="font-mono text-[12px] text-[var(--color-text-mid)]">
-                            {t.color}
-                          </code>
                         </Td>
                         <Td align="right">{count}</Td>
                         <Td align="right">

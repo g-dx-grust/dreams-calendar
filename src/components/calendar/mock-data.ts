@@ -8,8 +8,8 @@ export const SCHEDULE_TYPES: ScheduleType[] = [
   { id: "external", name: "社外", color: "#34C724" },
   { id: "office", name: "役所", color: "#FF8800" },
   { id: "survey", name: "測量", color: "#8F959E" },
-  { id: "registration", name: "登記", color: "#C5C8CE" },
-  { id: "application", name: "申請", color: "#DEE0E3" },
+  { id: "registration", name: "登記", color: "#8B5CF6" },
+  { id: "application", name: "申請", color: "#EC4899" },
   { id: "guest", name: "来客", color: "#4E83FF" },
   { id: "transit", name: "移動", color: "#1F2329" },
 ];
