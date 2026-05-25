@@ -1,16 +1,26 @@
 /*
- * Supabase サーバークライアント（雛形）
+ * Supabase サーバークライアント
+ * see: CLAUDE.md §D（kanri-system と同一プロジェクトを共有・ref: etngtsqidqndmwmosrff）
  *
- * 本番接続は CLAUDE.md §D の通り「kanri-system と共有 / 別プロジェクト」が確定するまで保留。
- * 環境変数が未設定の場合は null を返し、呼び出し側でフォールバック処理する想定。
+ * Server Components / Server Actions / Route Handler から呼ぶ。
+ * Cookie セッションに紐づく anon クライアントを返すため RLS が効く。
  */
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(
+      `環境変数 ${name} が未設定です。.env.local（本番は Vercel の環境変数）を確認してください。`,
+    );
+  }
+  return value;
+}
+
 export async function getSupabaseServer() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) return null;
+  const url = requireEnv("NEXT_PUBLIC_SUPABASE_URL");
+  const anonKey = requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
 
   const cookieStore = await cookies();
   return createServerClient(url, anonKey, {
