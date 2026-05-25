@@ -11,7 +11,7 @@
 
 ```sql
 CREATE TABLE schedules (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title VARCHAR(200) NOT NULL,
   start_at TIMESTAMPTZ NOT NULL,
   end_at TIMESTAMPTZ NOT NULL,
@@ -47,7 +47,7 @@ CREATE INDEX idx_schedules_case_id ON schedules(case_id);
 
 ```sql
 CREATE TABLE schedule_types (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name VARCHAR(50) NOT NULL,
   color VARCHAR(20) NOT NULL,  -- 例: '#3370FF'
   sort_order INTEGER DEFAULT 0,
@@ -82,7 +82,7 @@ CREATE INDEX idx_daily_reports_user_id ON daily_reports(user_id);
 
 ```sql
 CREATE TABLE project_schedule_logs (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   case_id INTEGER REFERENCES cases(id),
   schedule_id UUID REFERENCES schedules(id),
   user_id UUID REFERENCES users(id),

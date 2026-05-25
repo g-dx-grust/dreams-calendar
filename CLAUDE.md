@@ -53,14 +53,15 @@
 
 上記以外の追加は引き続き事前承認が必要。
 
-### D. データベース構成（保留事項）
+### D. データベース構成
 
-- 「kanri-system と同一 Supabase プロジェクトを共有するか / 別プロジェクトにするか」は**未確定（後日決定）**
-- 確定までは以下で進める：
-  - スキーマ案（`docs/02_database_schema.md`）の**マイグレーションファイル化までは行うが、本番適用はしない**
-  - `users` / `cases` への外部キー制約は確定まで**コメントアウト or 仮置き**にする
+- **kanri-system と同一 Supabase プロジェクトを共有**（プロジェクト ref: `etngtsqidqndmwmosrff`／2026-05-16 ユーザー承認）
+- 共有運用にあたっての方針：
+  - `users` / `cases` 等の共有テーブルは kanri-system 側を正本とし、本リポジトリでは外部キー参照のみ行う（テーブル再定義は禁止）
+  - 本システム固有テーブル（`schedules` / `schedule_types` 等）はマイグレーションで本プロジェクトに追加
   - UUID 生成は `gen_random_uuid()`（pgcrypto）を使用（`uuid_generate_v4()` は使わない）
-  - RLS ポリシー・監査ログ（`audit_logs`）は DB 構成決定後に追加設計
+  - RLS ポリシーは kanri-system の既存ポリシーと整合させた上で、本システム固有テーブルに付与
+  - 監査ログ（`audit_logs`）も kanri-system の既存テーブルに相乗りする方向で設計
 
 ### E. システム名表記
 
