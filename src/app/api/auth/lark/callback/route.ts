@@ -27,7 +27,9 @@ export async function GET(request: Request) {
   const avatar = pickAvatar(userResult.data);
   await setSession(userInfoToSession(userResult.data, avatar));
 
-  // TODO(DB確定後): users テーブルに upsert（avatar_url・display_name をキャッシュ）
+  // B-2/③ で対応：Lark email を kanri の users と突合し「自分」を確定。
+  // avatar_url・larkOpenId は共有 users ではなく本システム固有テーブル
+  // （user_profiles 想定）にキャッシュする（CLAUDE.md §D：共有 users は参照のみ）。
   return NextResponse.redirect(`${url.origin}/calendar`);
 }
 

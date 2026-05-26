@@ -1,28 +1,29 @@
 import Link from "next/link";
-import { randomBytes } from "node:crypto";
-import { cookies } from "next/headers";
-import { buildAuthorizeUrl, larkConfig } from "@/lib/lark/config";
+import { redirect } from "next/navigation";
+import { larkConfig } from "@/lib/lark/config";
+import { getSession } from "@/lib/session";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-async function issueAuthorizeUrl() {
-  const state = randomBytes(16).toString("hex");
-  const cookieStore = await cookies();
-  cookieStore.set("lark_oauth_state", state, {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: 600,
-    secure: process.env.NODE_ENV === "production",
-  });
-  return buildAuthorizeUrl(state);
+// コールバックが付ける error コードを利用者向けの文言にする
+function errorMessage(code: string): string {
+  if (code === "invalid_state") {
+    return "ログインの有効期限が切れたか、不正なアクセスでした。もう一度お試しください。";
+  }
+  return "ログインに失敗しました。時間をおいて再度お試しください。";
 }
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  if (await getSession()) redirect("/calendar");
+
+  const { error } = await searchParams;
   const configured = Boolean(larkConfig.appId && larkConfig.appSecret);
-  const authorizeUrl = configured ? await issueAuthorizeUrl() : null;
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[var(--color-background)] px-4">
@@ -36,9 +37,18 @@ export default async function LoginPage() {
           </p>
         </div>
 
-        {authorizeUrl ? (
+        {error ? (
+          <div
+            role="alert"
+            className="mb-4 text-[13px] text-[var(--color-danger)] border border-[var(--color-danger)] rounded-[var(--radius-s)] px-3 py-2"
+          >
+            {errorMessage(error)}
+          </div>
+        ) : null}
+
+        {configured ? (
           <Link
-            href={authorizeUrl}
+            href="/api/auth/lark/login"
             className={cn(buttonVariants({ variant: "primary", size: "lg" }), "w-full")}
           >
             Lark でログインする

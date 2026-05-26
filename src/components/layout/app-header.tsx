@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { Calendar, Settings, Smartphone } from "lucide-react";
+import { Calendar, LogOut, Settings, Smartphone } from "lucide-react";
 import type { SessionUser } from "@/lib/session";
 import type { CalendarUser } from "@/components/calendar/types";
 import { SelfSelector } from "./self-selector";
@@ -63,6 +63,16 @@ export function AppHeader({ user, selfUserId, users, back }: Props) {
             <span className="text-[13px] text-[var(--color-text-strong)]">
               {user.name}
             </span>
+            <form action="/api/auth/logout" method="post" className="contents">
+              <button
+                type="submit"
+                title="ログアウト"
+                className="inline-flex items-center gap-1 text-[13px] text-[var(--color-text-mid)] hover:text-[var(--color-primary)]"
+              >
+                <LogOut size={14} />
+                <span className="hidden sm:inline">ログアウト</span>
+              </button>
+            </form>
           </div>
         ) : (
           <Link
