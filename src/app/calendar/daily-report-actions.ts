@@ -2,20 +2,43 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { submitReport, getReport } from "@/lib/daily-report-store";
 import {
-  addReply,
-  deleteReply,
-  getReply,
-  updateReply,
+  getReportAsync,
+  markReportLarkNotifiedAsync,
+  submitReportAsync,
+} from "@/lib/daily-report-store";
+import {
+  addReplyAsync,
+  deleteReplyAsync,
+  getReplyAsync,
+  updateReplyAsync,
 } from "@/lib/daily-report-reply-store";
-import { getUser, listUsers } from "@/lib/user-store";
+import { getUserAsync, listUsersAsync } from "@/lib/user-store";
 import {
   sendDailyReportReply,
   sendDailyReportSubmitted,
 } from "@/lib/lark/notify";
+import type { DailyReportReply } from "@/components/calendar/types";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
+type SerializedDailyReportReply = Omit<
+  DailyReportReply,
+  "createdAt" | "updatedAt"
+> & {
+  createdAt: string;
+  updatedAt: string;
+};
+type ReplyActionResult =
+  | { ok: true; reply: SerializedDailyReportReply }
+  | { ok: false; error: string };
+
+function serializeReply(reply: DailyReportReply): SerializedDailyReportReply {
+  return {
+    ...reply,
+    createdAt: reply.createdAt.toISOString(),
+    updatedAt: reply.updatedAt.toISOString(),
+  };
+}
 
 const submitSchema = z.object({
   userId: z.string().min(1, "社員 ID が不正です"),
@@ -40,15 +63,18 @@ export async function submitDailyReportAction(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "入力エラー" };
   }
 
-  const report = submitReport(
+  const report = await submitReportAsync(
     parsed.data.userId,
     parsed.data.reportDate,
     parsed.data.body,
   );
 
-  const user = listUsers().find((u) => u.id === parsed.data.userId);
+  const user = (await listUsersAsync()).find((u) => u.id === parsed.data.userId);
   if (user) {
-    await sendDailyReportSubmitted(user, report);
+    const result = await sendDailyReportSubmitted(user, report);
+    if (result.ok) {
+      await markReportLarkNotifiedAsync(report.id);
+    }
   }
 
   revalidatePath("/calendar");
@@ -72,7 +98,7 @@ const postReplySchema = z.object({
 
 export async function postDailyReportReplyAction(
   formData: FormData,
-): Promise<ActionResult> {
+): Promise<ReplyActionResult> {
   const parsed = postReplySchema.safeParse({
     reportId: formData.get("reportId"),
     reportUserId: formData.get("reportUserId"),
@@ -84,25 +110,28 @@ export async function postDailyReportReplyAction(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "入力エラー" };
   }
 
-  const report = getReport(parsed.data.reportUserId, parsed.data.reportDate);
+  const report = await getReportAsync(
+    parsed.data.reportUserId,
+    parsed.data.reportDate,
+  );
   if (!report || report.id !== parsed.data.reportId) {
     return { ok: false, error: "対象の日報が見つかりませんでした" };
   }
 
-  const reply = addReply(
+  const reply = await addReplyAsync(
     parsed.data.reportId,
     parsed.data.authorUserId,
     parsed.data.body,
   );
 
-  const reportAuthor = getUser(parsed.data.reportUserId);
-  const replyAuthor = getUser(parsed.data.authorUserId);
+  const reportAuthor = await getUserAsync(parsed.data.reportUserId);
+  const replyAuthor = await getUserAsync(parsed.data.authorUserId);
   if (reportAuthor && replyAuthor) {
     await sendDailyReportReply(reportAuthor, report, reply, replyAuthor.name);
   }
 
   revalidatePath("/calendar");
-  return { ok: true };
+  return { ok: true, reply: serializeReply(reply) };
 }
 
 const updateReplySchema = z.object({
@@ -113,7 +142,7 @@ const updateReplySchema = z.object({
 
 export async function updateDailyReportReplyAction(
   formData: FormData,
-): Promise<ActionResult> {
+): Promise<ReplyActionResult> {
   const parsed = updateReplySchema.safeParse({
     replyId: formData.get("replyId"),
     authorUserId: formData.get("authorUserId"),
@@ -123,13 +152,13 @@ export async function updateDailyReportReplyAction(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "入力エラー" };
   }
 
-  const existing = getReply(parsed.data.replyId);
+  const existing = await getReplyAsync(parsed.data.replyId);
   if (!existing) return { ok: false, error: "返信が見つかりませんでした" };
   if (existing.userId !== parsed.data.authorUserId) {
     return { ok: false, error: "本人のみ編集できます" };
   }
 
-  const updated = updateReply(
+  const updated = await updateReplyAsync(
     parsed.data.replyId,
     parsed.data.authorUserId,
     parsed.data.body,
@@ -137,7 +166,7 @@ export async function updateDailyReportReplyAction(
   if (!updated) return { ok: false, error: "更新できませんでした" };
 
   revalidatePath("/calendar");
-  return { ok: true };
+  return { ok: true, reply: serializeReply(updated) };
 }
 
 const deleteReplySchema = z.object({
@@ -156,13 +185,16 @@ export async function deleteDailyReportReplyAction(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "入力エラー" };
   }
 
-  const existing = getReply(parsed.data.replyId);
+  const existing = await getReplyAsync(parsed.data.replyId);
   if (!existing) return { ok: false, error: "返信が見つかりませんでした" };
   if (existing.userId !== parsed.data.authorUserId) {
     return { ok: false, error: "本人のみ削除できます" };
   }
 
-  const ok = deleteReply(parsed.data.replyId, parsed.data.authorUserId);
+  const ok = await deleteReplyAsync(
+    parsed.data.replyId,
+    parsed.data.authorUserId,
+  );
   if (!ok) return { ok: false, error: "削除できませんでした" };
 
   revalidatePath("/calendar");

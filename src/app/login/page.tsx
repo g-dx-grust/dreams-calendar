@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-// コールバックが付ける error コードを利用者向けの文言にする
 function errorMessage(code: string): string {
   if (code === "invalid_state") {
     return "ログインの有効期限が切れたか、不正なアクセスでした。もう一度お試しください。";
@@ -47,19 +46,35 @@ export default async function LoginPage({
         ) : null}
 
         {configured ? (
-          <Link
-            href="/api/auth/lark/login"
-            className={cn(buttonVariants({ variant: "primary", size: "lg" }), "w-full")}
-          >
-            Lark でログインする
-          </Link>
+          <div className="space-y-2">
+            <Link
+              href="/calendar"
+              className={cn(buttonVariants({ variant: "primary", size: "lg" }), "w-full")}
+            >
+              カレンダーを確認する
+            </Link>
+            <Link
+              href="/api/auth/lark/start"
+              className={cn(buttonVariants({ variant: "secondary", size: "lg" }), "w-full")}
+            >
+              Lark でログインする
+            </Link>
+          </div>
         ) : (
-          <div className="text-[13px] text-[var(--color-danger)] border border-[var(--color-danger)] rounded-[var(--radius-s)] px-3 py-2">
-            Lark の認証情報が設定されていません。
-            <br />
-            <code className="text-[12px]">.env.local</code> に
-            <code className="text-[12px]"> LARK_APP_ID</code> と
-            <code className="text-[12px]"> LARK_APP_SECRET</code> を設定してください。
+          <div className="space-y-3">
+            <Link
+              href="/calendar"
+              className={cn(buttonVariants({ variant: "primary", size: "lg" }), "w-full")}
+            >
+              カレンダーを確認する
+            </Link>
+            <div className="text-[13px] text-[var(--color-danger)] border border-[var(--color-danger)] rounded-[var(--radius-s)] px-3 py-2">
+              Lark の認証情報が設定されていません。
+              <br />
+              <code className="text-[12px]">.env.local</code> に
+              <code className="text-[12px]"> LARK_APP_ID</code> と
+              <code className="text-[12px]"> LARK_APP_SECRET</code> を設定してください。
+            </div>
           </div>
         )}
 

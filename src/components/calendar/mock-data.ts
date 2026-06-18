@@ -2,16 +2,16 @@ import type { CalendarUser, Schedule, ScheduleType } from "./types";
 
 // see: docs/02_database_schema.md 初期データ
 export const SCHEDULE_TYPES: ScheduleType[] = [
-  { id: "important", name: "重要", color: "#F54A45" },
-  { id: "field", name: "現場", color: "#3370FF" },
-  { id: "internal", name: "社内", color: "#646A73" },
-  { id: "external", name: "社外", color: "#34C724" },
-  { id: "office", name: "役所", color: "#FF8800" },
-  { id: "survey", name: "測量", color: "#8F959E" },
-  { id: "registration", name: "登記", color: "#8B5CF6" },
-  { id: "application", name: "申請", color: "#EC4899" },
-  { id: "guest", name: "来客", color: "#4E83FF" },
-  { id: "transit", name: "移動", color: "#1F2329" },
+  { id: "important", name: "重要", color: "danger" },
+  { id: "field", name: "現場", color: "main" },
+  { id: "internal", name: "社内", color: "text-grey" },
+  { id: "external", name: "社外", color: "chart-2" },
+  { id: "office", name: "役所", color: "chart-6" },
+  { id: "survey", name: "測量", color: "chart-4" },
+  { id: "registration", name: "登記", color: "chart-8" },
+  { id: "application", name: "申請", color: "chart-9" },
+  { id: "guest", name: "来客", color: "chart-3" },
+  { id: "transit", name: "移動", color: "neutral" },
 ];
 
 export const MOCK_USERS: CalendarUser[] = [
@@ -22,6 +22,22 @@ export const MOCK_USERS: CalendarUser[] = [
   { id: "u5", name: "高橋 健一" },
 ];
 
+export type MockCaseOption = {
+  id: number;
+  caseNumber: string;
+  caseName: string;
+};
+
+export const MOCK_CASES: MockCaseOption[] = [
+  { id: 1001, caseNumber: "2026-LI-001", caseName: "豊橋市A現場" },
+  { id: 1002, caseNumber: "2026-FC-002", caseName: "法務局登記申請" },
+  { id: 1003, caseNumber: "2026-BS-003", caseName: "社内ミーティング" },
+  { id: 1004, caseNumber: "2026-LI-004", caseName: "名古屋市B現場" },
+  { id: 1005, caseNumber: "2026-LI-005", caseName: "C現場図面打ち合わせ" },
+  { id: 1006, caseNumber: "2026-FC-006", caseName: "市役所申請手続き" },
+  { id: 1007, caseNumber: "2026-LI-007", caseName: "D現場測量" },
+];
+
 function at(dayOffset: number, hour: number, minute = 0) {
   const d = new Date();
   d.setDate(d.getDate() + dayOffset);
@@ -29,7 +45,26 @@ function at(dayOffset: number, hour: number, minute = 0) {
   return d;
 }
 
-const RAW_SCHEDULES: Omit<Schedule, "status" | "isAllDay">[] = [
+const CASE_BY_NUMBER = new Map(MOCK_CASES.map((c) => [c.caseNumber, c]));
+
+type RawSchedule = Omit<
+  Schedule,
+  "status" | "isAllDay" | "syncSource" | "syncStatus"
+>;
+
+function attachCaseInfo(schedule: RawSchedule): RawSchedule {
+  const matched = schedule.caseNumber
+    ? CASE_BY_NUMBER.get(schedule.caseNumber)
+    : null;
+  if (!matched) return schedule;
+  return {
+    ...schedule,
+    caseId: matched.id,
+    caseName: matched.caseName,
+  };
+}
+
+const RAW_SCHEDULES: RawSchedule[] = [
   // === 今日 ===
   {
     id: "s1",
@@ -221,7 +256,14 @@ const RAW_SCHEDULES: Omit<Schedule, "status" | "isAllDay">[] = [
 const DONE_IDS = new Set(["s18", "s19", "s20"]);
 
 export const MOCK_SCHEDULES: Schedule[] = RAW_SCHEDULES.map((s) => ({
-  ...s,
+  ...attachCaseInfo(s),
   isAllDay: false,
   status: DONE_IDS.has(s.id) ? "done" : "planned",
+  syncSource: "app",
+  syncStatus: "pending",
+  actualStartAt: DONE_IDS.has(s.id) ? s.startAt : undefined,
+  actualEndAt: DONE_IDS.has(s.id) ? s.endAt : undefined,
+  actualMinutes: DONE_IDS.has(s.id)
+    ? Math.max(15, Math.round((s.endAt.getTime() - s.startAt.getTime()) / 60000))
+    : undefined,
 }));

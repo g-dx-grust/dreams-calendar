@@ -1,8 +1,8 @@
 import { getSession } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
 import { AdminNav } from "@/components/admin/admin-nav";
-import { listUsers } from "@/lib/user-store";
-import { listSchedules } from "@/lib/schedule-store";
+import { listUsersAsync } from "@/lib/user-store";
+import { listSchedulesAsync } from "@/lib/schedule-store";
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +10,10 @@ export const dynamic = "force-dynamic";
 // 本画面は参照専用。追加・編集・削除は kanri-system 側で行う。
 export default async function UsersAdminPage() {
   const session = await getSession();
-  const users = listUsers();
-  const schedules = listSchedules();
+  const [users, schedules] = await Promise.all([
+    listUsersAsync(),
+    listSchedulesAsync(),
+  ]);
 
   // 各社員に紐づく予定数（参照件数：担当者の何れかとして含まれる予定）
   const usageCount = new Map<string, number>();

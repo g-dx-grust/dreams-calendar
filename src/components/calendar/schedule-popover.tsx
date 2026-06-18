@@ -8,6 +8,7 @@ import { ja } from "date-fns/locale";
 import { Clock, MapPin, Pencil, Trash2, Users, X } from "lucide-react";
 import type { CalendarUser, Schedule, ScheduleType } from "./types";
 import { deleteScheduleAction } from "@/app/calendar/actions";
+import { scheduleTypeBackground } from "./color-utils";
 
 const POPOVER_WIDTH = 360;
 const VIEWPORT_MARGIN = 8;
@@ -81,6 +82,16 @@ export function SchedulePopover({
   const timeRange = sameDay
     ? `${fmtDateLabel(schedule.startAt)}　${fmtTime(schedule.startAt)} 〜 ${fmtTime(schedule.endAt)}`
     : `${fmtDateLabel(schedule.startAt)} ${fmtTime(schedule.startAt)} 〜 ${fmtDateLabel(schedule.endAt)} ${fmtTime(schedule.endAt)}`;
+  const caseParts: string[] = [];
+  if (schedule.caseNumber) caseParts.push(`案件番号 ${schedule.caseNumber}`);
+  if (schedule.caseName) caseParts.push(schedule.caseName);
+  const caseLabel = caseParts.join("　");
+  const kanriSystemUrl =
+    process.env.NEXT_PUBLIC_KANRI_SYSTEM_URL?.replace(/\/+$/, "") ?? "";
+  const caseHref =
+    kanriSystemUrl && schedule.caseId
+      ? `${kanriSystemUrl}/cases/${schedule.caseId}`
+      : "";
 
   function onDelete() {
     if (isDeleting) return;
@@ -141,18 +152,27 @@ export function SchedulePopover({
         <div className="flex items-start gap-2.5">
           <span
             className="mt-1.5 inline-block w-2.5 h-2.5 rounded-full border border-black/10 shrink-0"
-            style={{ background: type?.color ?? "#646A73" }}
+            style={{ background: scheduleTypeBackground(type?.color ?? "text-grey") }}
             aria-hidden
           />
           <div className="min-w-0 flex-1">
             <h3 className="text-[15px] font-bold text-[var(--color-text-strong)] break-words leading-snug">
               {schedule.title}
             </h3>
-            {type || schedule.caseNumber ? (
+            {type || caseLabel ? (
               <p className="mt-1 text-[12px] text-[var(--color-text-mid)]">
                 {type ? type.name : ""}
-                {type && schedule.caseNumber ? "　" : ""}
-                {schedule.caseNumber ? `案件番号 ${schedule.caseNumber}` : ""}
+                {type && caseLabel ? "　" : ""}
+                {caseLabel && caseHref ? (
+                  <Link
+                    href={caseHref}
+                    className="text-[var(--color-primary)] hover:underline"
+                  >
+                    {caseLabel}
+                  </Link>
+                ) : (
+                  caseLabel
+                )}
               </p>
             ) : null}
           </div>

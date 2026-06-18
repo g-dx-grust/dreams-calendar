@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { format } from "date-fns";
 import { ja } from "date-fns/locale";
 import {
@@ -21,6 +21,10 @@ import type {
 } from "./types";
 import { DailyReportCell } from "./daily-report-cell";
 import { SchedulePopover } from "./schedule-popover";
+import {
+  scheduleTypeBackground,
+  scheduleTypeForeground,
+} from "./color-utils";
 import { cn } from "@/lib/utils";
 
 import {
@@ -56,15 +60,44 @@ function pxFromMinutes(minutes: number) {
   return (minutes / 60) * HOUR_WIDTH_PX;
 }
 
-function isLightColor(hex: string) {
-  const c = hex.replace("#", "");
-  const r = parseInt(c.slice(0, 2), 16);
-  const g = parseInt(c.slice(2, 4), 16);
-  const b = parseInt(c.slice(4, 6), 16);
-  return r * 0.299 + g * 0.587 + b * 0.114 > 186;
+export function DayView({
+  date,
+  users,
+  schedules,
+  scheduleTypes,
+  startHour,
+  endHour,
+  reportDate,
+  reportsByUserId,
+}: Props) {
+  const resetKey = [
+    reportDate,
+    ...schedules.map((s) =>
+      [
+        s.id,
+        s.startAt.getTime(),
+        s.endAt.getTime(),
+        s.userIds.join(","),
+      ].join(":"),
+    ),
+  ].join("|");
+
+  return (
+    <DayViewContent
+      key={resetKey}
+      date={date}
+      users={users}
+      schedules={schedules}
+      scheduleTypes={scheduleTypes}
+      startHour={startHour}
+      endHour={endHour}
+      reportDate={reportDate}
+      reportsByUserId={reportsByUserId}
+    />
+  );
 }
 
-export function DayView({
+function DayViewContent({
   date,
   users,
   schedules,
@@ -94,9 +127,6 @@ export function DayView({
 
   // 楽観的更新用：サーバーから来た schedules を初期値とし、D&D 直後はローカルで先に動かす
   const [localSchedules, setLocalSchedules] = useState<Schedule[]>(schedules);
-  useEffect(() => {
-    setLocalSchedules(schedules);
-  }, [schedules]);
 
   const typeMap = useMemo(
     () => new Map(scheduleTypes.map((t) => [t.id, t])),
@@ -224,7 +254,11 @@ export function DayView({
       </div>
 
       {/* グリッド本体（横スクロール） */}
-      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+      <DndContext
+        id="calendar-day-view-dnd"
+        sensors={sensors}
+        onDragEnd={handleDragEnd}
+      >
         <div className="overflow-auto">
           <div
             className="relative"
@@ -309,7 +343,7 @@ export function DayView({
           >
             <span
               className="inline-block w-3 h-3 rounded-[2px] border border-black/10"
-              style={{ background: t.color }}
+              style={{ background: scheduleTypeBackground(t.color) }}
               aria-hidden
             />
             {t.name}
@@ -367,6 +401,7 @@ function UserRow({
   onResize: (id: string, newStart: Date, newEnd: Date) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `user-${user.id}` });
+  const dailyReportDraft = buildDailyReportDraft(schedules);
 
   return (
     <div
@@ -395,6 +430,7 @@ function UserRow({
           userName={user.name}
           reportDate={reportDate}
           initialReport={report}
+          autoDraft={dailyReportDraft}
         />
       </div>
 
@@ -436,6 +472,32 @@ function UserRow({
       </div>
     </div>
   );
+}
+
+function buildDailyReportDraft(schedules: Schedule[]): string | undefined {
+  const doneSchedules = schedules
+    .filter((schedule) => schedule.status === "done")
+    .sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
+
+  if (doneSchedules.length === 0) return undefined;
+
+  return doneSchedules
+    .map((schedule) => {
+      const casePart = schedule.caseNumber ? `（${schedule.caseNumber}）` : "";
+      const actualPart = schedule.actualMinutes
+        ? ` ${formatWorkMinutes(schedule.actualMinutes)}`
+        : "";
+      return `・${format(schedule.startAt, "HH:mm")}〜${format(schedule.endAt, "HH:mm")} ${schedule.title}${casePart}${actualPart}`;
+    })
+    .join("\n");
+}
+
+function formatWorkMinutes(minutes: number) {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours === 0) return `${rest}分`;
+  if (rest === 0) return `${hours}時間`;
+  return `${hours}時間${rest}分`;
 }
 
 function DraggableScheduleBlock({
@@ -487,8 +549,9 @@ function DraggableScheduleBlock({
   }
 
   const type = typeMap.get(schedule.typeId);
-  const bg = type?.color ?? "#646A73";
-  const fg = isLightColor(bg) ? "#1F2329" : "#ffffff";
+  const rawColor = type?.color ?? "text-grey";
+  const bg = scheduleTypeBackground(rawColor);
+  const fg = scheduleTypeForeground(rawColor);
   const isResizing = resizing !== null;
 
   const style: React.CSSProperties = {

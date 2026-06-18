@@ -11,6 +11,22 @@ import {
 } from "@/app/calendar/daily-report-actions";
 import type { CalendarUser, DailyReportReply } from "./types";
 
+type SerializedDailyReportReply = Omit<
+  DailyReportReply,
+  "createdAt" | "updatedAt"
+> & {
+  createdAt: string;
+  updatedAt: string;
+};
+
+function hydrateReply(reply: SerializedDailyReportReply): DailyReportReply {
+  return {
+    ...reply,
+    createdAt: new Date(reply.createdAt),
+    updatedAt: new Date(reply.updatedAt),
+  };
+}
+
 type Props = {
   reportId: string;
   reportUserId: string;
@@ -105,7 +121,7 @@ function ReplyItem({
         setError(result.error);
         return;
       }
-      onUpdated({ ...reply, body: draft, updatedAt: new Date() });
+      onUpdated(hydrateReply(result.reply));
       setEditing(false);
     });
   }
@@ -251,15 +267,7 @@ function ReplyForm({
         setError(result.error);
         return;
       }
-      const now = new Date();
-      onPosted({
-        id: crypto.randomUUID(),
-        reportId,
-        userId: authorUserId,
-        body,
-        createdAt: now,
-        updatedAt: now,
-      });
+      onPosted(hydrateReply(result.reply));
       setBody("");
     });
   }

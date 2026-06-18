@@ -6,6 +6,10 @@ import { format, startOfWeek, addDays, isToday } from "date-fns";
 import { ja } from "date-fns/locale";
 import type { CalendarUser, Schedule, ScheduleType } from "./types";
 import { SchedulePopover } from "./schedule-popover";
+import {
+  scheduleTypeBackground,
+  scheduleTypeForeground,
+} from "./color-utils";
 
 const USER_COL_PX = 140;
 const DAY_COL_MIN_PX = 160;
@@ -16,14 +20,6 @@ type Props = {
   schedules: Schedule[];
   scheduleTypes: ScheduleType[];
 };
-
-function isLight(hex: string) {
-  const c = hex.replace("#", "");
-  const r = parseInt(c.slice(0, 2), 16);
-  const g = parseInt(c.slice(2, 4), 16);
-  const b = parseInt(c.slice(4, 6), 16);
-  return r * 0.299 + g * 0.587 + b * 0.114 > 186;
-}
 
 export function WeekView({ date, users, schedules, scheduleTypes }: Props) {
   const typeMap = useMemo(
@@ -129,8 +125,9 @@ export function WeekView({ date, users, schedules, scheduleTypes }: Props) {
                     ) : (
                       dayItems.map((s) => {
                         const t = typeMap.get(s.typeId);
-                        const bg = t?.color ?? "#646A73";
-                        const fg = isLight(bg) ? "#1F2329" : "#fff";
+                        const rawColor = t?.color ?? "text-grey";
+                        const bg = scheduleTypeBackground(rawColor);
+                        const fg = scheduleTypeForeground(rawColor);
                         return (
                           <button
                             key={s.id}

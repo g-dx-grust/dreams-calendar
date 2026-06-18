@@ -28,11 +28,11 @@ export default async function NotificationsPage() {
           <div className="flex items-center gap-2 mb-3">
             <Bell size={16} className="text-[var(--color-primary)]" />
             <h2 className="text-[16px] font-bold text-[var(--color-text-strong)]">
-              Lark 招待通知ログ
+              Lark 通知ログ
             </h2>
           </div>
           <p className="text-[13px] text-[var(--color-text-mid)] mb-4">
-            予定への招待時に送信した通知の履歴です（最新 100 件、プロセス内保持）。
+            予定招待や日報提出で送信した通知の履歴です（最新 100 件、プロセス内保持）。
           </p>
 
           <div className="bg-white border border-[var(--color-border)] rounded-[var(--radius-m)] overflow-hidden">
@@ -51,8 +51,8 @@ export default async function NotificationsPage() {
                     <td
                       colSpan={4}
                       className="px-3 py-6 text-center text-[var(--color-text-weak)]"
-                    >
-                      まだ通知履歴はありません。予定に他のメンバーを担当者として追加すると記録されます。
+                  >
+                      まだ通知履歴はありません。予定招待または日報提出を行うと記録されます。
                     </td>
                   </tr>
                 ) : (

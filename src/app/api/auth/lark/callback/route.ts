@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { exchangeCode, fetchUserInfo, pickAvatar } from "@/lib/lark/client";
+import { LARK_OAUTH_STATE_COOKIE } from "@/lib/lark/config";
 import { setSession, userInfoToSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -11,8 +12,8 @@ export async function GET(request: Request) {
   const state = url.searchParams.get("state");
 
   const cookieStore = await cookies();
-  const expectedState = cookieStore.get("lark_oauth_state")?.value;
-  cookieStore.delete("lark_oauth_state");
+  const expectedState = cookieStore.get(LARK_OAUTH_STATE_COOKIE)?.value;
+  cookieStore.delete(LARK_OAUTH_STATE_COOKIE);
 
   if (!code || !state || !expectedState || state !== expectedState) {
     return redirectWithError(url.origin, "invalid_state");

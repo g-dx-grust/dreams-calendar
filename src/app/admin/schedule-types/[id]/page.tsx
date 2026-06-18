@@ -6,8 +6,8 @@ import { AppHeader } from "@/components/layout/app-header";
 import { AdminNav } from "@/components/admin/admin-nav";
 import { ScheduleTypeForm } from "@/components/admin/schedule-type-form";
 import { AdminDeleteButton } from "@/components/admin/delete-button";
-import { getScheduleType } from "@/lib/schedule-type-store";
-import { listSchedules } from "@/lib/schedule-store";
+import { getScheduleTypeAsync } from "@/lib/schedule-type-store";
+import { listSchedulesAsync } from "@/lib/schedule-store";
 import {
   deleteScheduleTypeAction,
   updateScheduleTypeAction,
@@ -21,13 +21,14 @@ export default async function ScheduleTypeEditPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const type = getScheduleType(id);
+  const type = await getScheduleTypeAsync(id);
   if (!type) notFound();
 
   const session = await getSession();
   const update = updateScheduleTypeAction.bind(null, id);
   const remove = deleteScheduleTypeAction.bind(null, id);
-  const count = listSchedules().filter((s) => s.typeId === id).length;
+  const schedules = await listSchedulesAsync();
+  const count = schedules.filter((s) => s.typeId === id).length;
   const message =
     count > 0
       ? `予定種別「${type.name}」には ${count} 件の予定が紐づいています。削除すると種別表示が空欄になります。\n削除してよろしいですか？`
@@ -68,7 +69,7 @@ export default async function ScheduleTypeEditPage({
 
           <div className="max-w-[560px] bg-white border border-[var(--color-border)] rounded-[var(--radius-m)] p-6">
             <ScheduleTypeForm
-              defaultValues={{ name: type.name, color: type.color.toUpperCase() }}
+              defaultValues={{ name: type.name, color: type.color }}
               submitLabel="変更を保存する"
               cancelHref="/admin/schedule-types"
               action={update}

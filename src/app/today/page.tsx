@@ -5,27 +5,23 @@ import { CalendarDays } from "lucide-react";
 import { getSession } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
 import {
-  listSchedules,
-  listScheduleTypes,
-  listUsers,
+  listSchedulesAsync,
+  listScheduleTypesAsync,
+  listUsersAsync,
 } from "@/lib/schedule-store";
 import {
   SCHEDULE_STATUS_LABEL,
   type Schedule,
   type ScheduleStatus,
 } from "@/components/calendar/types";
+import {
+  scheduleTypeBackground,
+  scheduleTypeForeground,
+} from "@/components/calendar/color-utils";
 
 export const dynamic = "force-dynamic";
 
 type SearchParams = Promise<{ user?: string }>;
-
-function isLight(hex: string) {
-  const c = hex.replace("#", "");
-  const r = parseInt(c.slice(0, 2), 16);
-  const g = parseInt(c.slice(2, 4), 16);
-  const b = parseInt(c.slice(4, 6), 16);
-  return r * 0.299 + g * 0.587 + b * 0.114 > 186;
-}
 
 export default async function TodayPage({
   searchParams,
@@ -34,8 +30,8 @@ export default async function TodayPage({
 }) {
   const sp = await searchParams;
   const session = await getSession();
-  const users = listUsers();
-  const types = listScheduleTypes();
+  const users = await listUsersAsync();
+  const types = await listScheduleTypesAsync();
   const typeMap = new Map(types.map((t) => [t.id, t]));
 
   const selfId = sp.user && users.find((u) => u.id === sp.user)
@@ -44,7 +40,7 @@ export default async function TodayPage({
   const self = users.find((u) => u.id === selfId);
 
   const today = new Date();
-  const all = listSchedules();
+  const all = await listSchedulesAsync();
   const items = all
     .filter(
       (s) => s.userIds.includes(selfId) && isSameDay(s.startAt, today),
@@ -135,8 +131,9 @@ function ScheduleList({
     <ul className="space-y-2">
       {items.map((s) => {
         const t = typeMap.get(s.typeId);
-        const bg = t?.color ?? "#646A73";
-        const fg = isLight(bg) ? "#1F2329" : "#fff";
+        const rawColor = t?.color ?? "text-grey";
+        const bg = scheduleTypeBackground(rawColor);
+        const fg = scheduleTypeForeground(rawColor);
         const isDone = s.status === "done";
 
         return (
@@ -178,9 +175,11 @@ function ScheduleList({
               >
                 {s.title}
               </div>
-              {s.caseNumber ? (
+              {s.caseNumber || s.caseName ? (
                 <div className="text-[12px] text-[var(--color-text-mid)] mt-0.5">
-                  案件番号：{s.caseNumber}
+                  {[s.caseNumber ? `案件番号：${s.caseNumber}` : null, s.caseName]
+                    .filter(Boolean)
+                    .join("　")}
                 </div>
               ) : null}
               {s.location ? (
@@ -199,11 +198,26 @@ function ScheduleList({
 function StatusChip({ status }: { status: ScheduleStatus }) {
   const label = SCHEDULE_STATUS_LABEL[status];
   const styles: Record<ScheduleStatus, { bg: string; fg: string }> = {
-    planned: { bg: "#F5F6F7", fg: "#646A73" },
-    in_progress: { bg: "#E7F0FF", fg: "#3370FF" },
-    done: { bg: "#E5F8E5", fg: "#1F8F1F" },
-    carried_over: { bg: "#FFF4E5", fg: "#B36B00" },
-    cancelled: { bg: "#F5F6F7", fg: "#8F959E" },
+    planned: {
+      bg: "var(--color-background)",
+      fg: "var(--color-text-mid)",
+    },
+    in_progress: {
+      bg: "var(--color-primary-soft)",
+      fg: "var(--color-primary)",
+    },
+    done: {
+      bg: "var(--color-background)",
+      fg: "var(--color-success)",
+    },
+    carried_over: {
+      bg: "var(--color-background)",
+      fg: "var(--color-warning)",
+    },
+    cancelled: {
+      bg: "var(--color-background)",
+      fg: "var(--color-text-weak)",
+    },
   };
   const { bg, fg } = styles[status];
   return (

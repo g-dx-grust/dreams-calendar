@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useForm, Controller } from "react-hook-form";
@@ -11,7 +11,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TimePicker15 } from "./time-picker-15";
-import type { CalendarUser, ScheduleType } from "./types";
+import {
+  SCHEDULE_STATUS_LABEL,
+  type CalendarUser,
+  type ScheduleStatus,
+  type ScheduleType,
+} from "./types";
+
+const SCHEDULE_STATUSES = [
+  "planned",
+  "in_progress",
+  "done",
+  "carried_over",
+  "cancelled",
+] as const satisfies readonly ScheduleStatus[];
 
 const formSchema = z
   .object({
@@ -25,9 +38,15 @@ const formSchema = z
     endDate: z.string(),
     startTime: z.string(),
     endTime: z.string(),
+    caseId: z.string().optional().or(z.literal("")),
     caseNumber: z.string().max(50).optional().or(z.literal("")),
+    caseName: z.string().max(200).optional().or(z.literal("")),
     location: z.string().max(200).optional().or(z.literal("")),
     memo: z.string().max(2000).optional().or(z.literal("")),
+    status: z.enum(SCHEDULE_STATUSES),
+    actualStartAt: z.string().optional().or(z.literal("")),
+    actualEndAt: z.string().optional().or(z.literal("")),
+    actualMinutes: z.string().optional().or(z.literal("")),
   })
   .superRefine((v, ctx) => {
     if (v.isAllDay) {
@@ -67,9 +86,63 @@ const formSchema = z
         });
       }
     }
+
+    const hasActualStart = Boolean(v.actualStartAt);
+    const hasActualEnd = Boolean(v.actualEndAt);
+    if (hasActualStart !== hasActualEnd) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["actualEndAt"],
+        message: "実績開始と実績終了はセットで入力してください",
+      });
+    }
+    if (
+      v.actualStartAt &&
+      v.actualEndAt &&
+      new Date(v.actualStartAt) >= new Date(v.actualEndAt)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["actualEndAt"],
+        message: "実績終了は実績開始より後に設定してください",
+      });
+    }
+
+    const actualMinutes = v.actualMinutes ? Number(v.actualMinutes) : null;
+    if (
+      v.actualMinutes &&
+      (!Number.isInteger(actualMinutes) ||
+        actualMinutes == null ||
+        actualMinutes <= 0 ||
+        actualMinutes > 1440)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["actualMinutes"],
+        message: "実績時間は1〜1440分で入力してください",
+      });
+    }
+    if (v.status === "done" && !v.actualMinutes && !hasActualStart) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["actualMinutes"],
+        message: "完了にする場合は実績時間を入力してください",
+      });
+    }
   });
 
 export type ScheduleFormValues = z.infer<typeof formSchema>;
+
+type CaseOption = {
+  id: number;
+  caseNumber: string;
+  caseName: string;
+};
+
+type CaseSearchResponse = {
+  items?: CaseOption[];
+  error?: string;
+};
 
 type Props = {
   users: CalendarUser[];
@@ -81,7 +154,9 @@ type Props = {
   selfUserId?: string | null;
   /** 既存予定の編集時、すでに含まれている userIds（招待通知判定の表示に使用） */
   initialUserIds?: string[];
-  action: (formData: FormData) => Promise<{ ok: true } | { ok: false; error: string } | void>;
+  action: (
+    formData: FormData,
+  ) => Promise<{ ok: true } | { ok: false; error: string } | void>;
 };
 
 export function ScheduleForm({
@@ -112,6 +187,7 @@ export function ScheduleForm({
     handleSubmit,
     control,
     watch,
+    setValue,
     formState: { errors },
   } = useForm<ScheduleFormValues>({
     resolver: zodResolver(formSchema),
@@ -124,20 +200,107 @@ export function ScheduleForm({
       endDate: "",
       startTime: "",
       endTime: "",
+      caseId: "",
       caseNumber: "",
+      caseName: "",
       location: "",
       memo: "",
+      status: "planned",
+      actualStartAt: "",
+      actualEndAt: "",
+      actualMinutes: "",
       ...defaultValues,
     },
   });
 
   const watchedUserIds = watch("userIds") ?? [];
   const isAllDay = watch("isAllDay") ?? false;
+  const caseNumber = watch("caseNumber") ?? "";
+  const selectedCaseId = watch("caseId") ?? "";
+  const selectedCaseName = watch("caseName") ?? "";
+  const status = watch("status") ?? "planned";
+  const caseNumberField = register("caseNumber");
+  const [caseOptions, setCaseOptions] = useState<CaseOption[]>([]);
+  const [isCaseSearching, setIsCaseSearching] = useState(false);
+  const [caseSearchError, setCaseSearchError] = useState<string | null>(null);
+  const [isCaseSuggestOpen, setIsCaseSuggestOpen] = useState(false);
   const initialSet = new Set(initialUserIds ?? []);
   // 通知対象 = 現在選択されているが、初期に含まれず、かつ自分でないユーザー
   const inviteCandidates = watchedUserIds.filter(
     (id) => !initialSet.has(id) && id !== selfUserId,
   );
+  const hasCaseSearchKeyword = caseNumber.trim().length >= 2;
+  const showCaseSearchPanel = isCaseSuggestOpen && hasCaseSearchKeyword;
+
+  useEffect(() => {
+    const keyword = caseNumber.trim();
+    let cancelled = false;
+
+    if (keyword.length < 2) {
+      setCaseOptions([]);
+      setCaseSearchError(null);
+      setIsCaseSearching(false);
+      return;
+    }
+
+    setIsCaseSearching(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch(
+          `/api/cases/search?q=${encodeURIComponent(keyword)}`,
+          { cache: "no-store" },
+        );
+        const payload = (await response.json()) as CaseSearchResponse;
+        if (cancelled) return;
+
+        if (!response.ok) {
+          setCaseOptions([]);
+          setCaseSearchError(
+            payload.error ?? "案件検索に失敗しました。時間をおいて再度お試しください。",
+          );
+          return;
+        }
+
+        setCaseOptions(payload.items ?? []);
+        setCaseSearchError(null);
+      } catch {
+        if (!cancelled) {
+          setCaseOptions([]);
+          setCaseSearchError(
+            "案件検索に失敗しました。時間をおいて再度お試しください。",
+          );
+        }
+      } finally {
+        if (!cancelled) setIsCaseSearching(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [caseNumber]);
+
+  function selectCase(option: CaseOption) {
+    setValue("caseId", String(option.id), {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    setValue("caseNumber", option.caseNumber, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    setValue("caseName", option.caseName, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    setIsCaseSuggestOpen(false);
+  }
+
+  function clearSelectedCase() {
+    setValue("caseId", "", { shouldDirty: true, shouldValidate: true });
+    setValue("caseName", "", { shouldDirty: true, shouldValidate: true });
+  }
 
   function onSubmit(values: ScheduleFormValues) {
     setServerError(null);
@@ -156,9 +319,15 @@ export function ScheduleForm({
         fd.set("startAt", `${values.startDate}T${values.startTime}`);
         fd.set("endAt", `${values.startDate}T${values.endTime}`);
       }
+      if (values.caseId) fd.set("caseId", values.caseId);
       if (values.caseNumber) fd.set("caseNumber", values.caseNumber);
+      if (values.caseName) fd.set("caseName", values.caseName);
       if (values.location) fd.set("location", values.location);
       if (values.memo) fd.set("memo", values.memo);
+      fd.set("status", values.status);
+      if (values.actualStartAt) fd.set("actualStartAt", values.actualStartAt);
+      if (values.actualEndAt) fd.set("actualEndAt", values.actualEndAt);
+      if (values.actualMinutes) fd.set("actualMinutes", values.actualMinutes);
 
       const result = await action(fd);
       if (result && "ok" in result && !result.ok) {
@@ -207,6 +376,16 @@ export function ScheduleForm({
           {scheduleTypes.map((t) => (
             <option key={t.id} value={t.id}>
               {t.name}
+            </option>
+          ))}
+        </Select>
+      </Field>
+
+      <Field label="ステータス" required error={errors.status?.message}>
+        <Select {...register("status")}>
+          {SCHEDULE_STATUSES.map((item) => (
+            <option key={item} value={item}>
+              {SCHEDULE_STATUS_LABEL[item]}
             </option>
           ))}
         </Select>
@@ -295,14 +474,94 @@ export function ScheduleForm({
       </div>
 
       <Field
+        label="実績"
+        hint={
+          status === "done"
+            ? "完了にする場合は実績時間を入力してください。案件別集計に反映されます。"
+            : "完了ステータスにすると案件別の実績時間として集計されます。"
+        }
+        error={
+          errors.actualStartAt?.message ||
+          errors.actualEndAt?.message ||
+          errors.actualMinutes?.message
+        }
+      >
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_120px]">
+          <label className="space-y-1">
+            <span className="block text-[12px] text-[var(--color-text-mid)]">
+              実績開始
+            </span>
+            <input
+              type="datetime-local"
+              {...register("actualStartAt")}
+              className="h-9 w-full px-3 text-[14px] bg-white text-[var(--color-text-strong)] border border-[var(--color-border)] rounded-[var(--radius-s)] focus:border-[var(--color-primary)] focus:outline-none"
+              aria-invalid={Boolean(errors.actualStartAt)}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="block text-[12px] text-[var(--color-text-mid)]">
+              実績終了
+            </span>
+            <input
+              type="datetime-local"
+              {...register("actualEndAt")}
+              className="h-9 w-full px-3 text-[14px] bg-white text-[var(--color-text-strong)] border border-[var(--color-border)] rounded-[var(--radius-s)] focus:border-[var(--color-primary)] focus:outline-none"
+              aria-invalid={Boolean(errors.actualEndAt)}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="block text-[12px] text-[var(--color-text-mid)]">
+              分
+            </span>
+            <input
+              type="number"
+              min={1}
+              max={1440}
+              step={1}
+              inputMode="numeric"
+              {...register("actualMinutes")}
+              className="h-9 w-full px-3 text-[14px] bg-white text-[var(--color-text-strong)] border border-[var(--color-border)] rounded-[var(--radius-s)] focus:border-[var(--color-primary)] focus:outline-none"
+              aria-invalid={Boolean(errors.actualMinutes)}
+            />
+          </label>
+        </div>
+      </Field>
+
+      <Field
         label="案件番号"
-        hint="kanri-system 接続後にサジェスト検索が有効になります"
+        hint="2文字以上でkanri-systemの案件を検索します。選択しない場合は番号だけ保存されます。"
         error={errors.caseNumber?.message}
       >
-        <Input
-          {...register("caseNumber")}
-          placeholder="例：2026-LI-001"
-        />
+        <input type="hidden" {...register("caseId")} />
+        <input type="hidden" {...register("caseName")} />
+        <div className="relative">
+          <Input
+            {...caseNumberField}
+            autoComplete="off"
+            placeholder="例：2026-LI-001"
+            aria-autocomplete="list"
+            aria-expanded={showCaseSearchPanel}
+            onFocus={() => setIsCaseSuggestOpen(true)}
+            onChange={(event) => {
+              caseNumberField.onChange(event);
+              clearSelectedCase();
+              setIsCaseSuggestOpen(true);
+            }}
+          />
+          {showCaseSearchPanel ? (
+            <CaseSuggestionPanel
+              options={caseOptions}
+              isSearching={isCaseSearching}
+              error={caseSearchError}
+              onSelect={selectCase}
+            />
+          ) : null}
+        </div>
+        {selectedCaseId && selectedCaseName ? (
+          <p className="text-[12px] text-[var(--color-text-mid)]">
+            紐付け先：{selectedCaseName}
+          </p>
+        ) : null}
       </Field>
 
       <Field label="場所" error={errors.location?.message}>
@@ -381,6 +640,64 @@ function Field({
       {error ? (
         <p className="text-[12px] text-[var(--color-danger)]">{error}</p>
       ) : null}
+    </div>
+  );
+}
+
+function CaseSuggestionPanel({
+  options,
+  isSearching,
+  error,
+  onSelect,
+}: {
+  options: CaseOption[];
+  isSearching: boolean;
+  error: string | null;
+  onSelect: (option: CaseOption) => void;
+}) {
+  return (
+    <div
+      role="listbox"
+      className="absolute left-0 right-0 z-20 mt-1 max-h-64 overflow-auto rounded-[var(--radius-m)] border border-[var(--color-border)] bg-white"
+    >
+      {isSearching ? (
+        <div className="px-3 py-2 text-[13px] text-[var(--color-text-mid)]">
+          検索中…
+        </div>
+      ) : null}
+      {error ? (
+        <div
+          role="alert"
+          className="px-3 py-2 text-[13px] text-[var(--color-danger)]"
+        >
+          {error}
+        </div>
+      ) : null}
+      {!isSearching && !error && options.length === 0 ? (
+        <div className="px-3 py-2 text-[13px] text-[var(--color-text-mid)]">
+          一致する案件がありません。
+        </div>
+      ) : null}
+      {!error
+        ? options.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              role="option"
+              aria-selected={false}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => onSelect(option)}
+              className="block w-full border-t border-[var(--color-border)] px-3 py-2 text-left first:border-t-0 hover:bg-[var(--color-background)] focus:bg-[var(--color-background)] focus:outline-none"
+            >
+              <span className="block text-[13px] font-medium text-[var(--color-text-strong)]">
+                {option.caseNumber}
+              </span>
+              <span className="block text-[12px] text-[var(--color-text-mid)]">
+                {option.caseName}
+              </span>
+            </button>
+          ))
+        : null}
     </div>
   );
 }

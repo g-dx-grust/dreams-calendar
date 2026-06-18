@@ -4,7 +4,7 @@
  *      Lark OAuth がフルに動くようになったら session.larkOpenId → users マッチに置換。
  */
 import { cookies } from "next/headers";
-import { listUsers } from "@/lib/user-store";
+import { listUsersAsync } from "@/lib/user-store";
 import { getSession } from "@/lib/session";
 
 const COOKIE_NAME = "gdx_self_user_id";
@@ -13,7 +13,7 @@ const MAX_AGE = 60 * 60 * 24 * 365; // 1 年
 export async function getCurrentUserId(): Promise<string | null> {
   const cookieStore = await cookies();
   const fromCookie = cookieStore.get(COOKIE_NAME)?.value;
-  const users = listUsers();
+  const users = await listUsersAsync();
   if (fromCookie && users.some((u) => u.id === fromCookie)) {
     return fromCookie;
   }

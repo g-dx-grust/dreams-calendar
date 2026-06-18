@@ -1,15 +1,21 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { format } from "date-fns";
+import { format, isSameDay } from "date-fns";
+import { ja } from "date-fns/locale";
 import { ChevronLeft } from "lucide-react";
 import { getSession } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
 import { ScheduleForm } from "@/components/calendar/schedule-form";
 import { DeleteScheduleButton } from "@/components/calendar/delete-button";
+import { SCHEDULE_STATUS_LABEL } from "@/components/calendar/types";
 import {
-  getSchedule,
-  listScheduleTypes,
-  listUsers,
+  scheduleTypeBackground,
+  scheduleTypeForeground,
+} from "@/components/calendar/color-utils";
+import {
+  getScheduleAsync,
+  listScheduleTypesAsync,
+  listUsersAsync,
 } from "@/lib/schedule-store";
 import { getCurrentUserId } from "@/lib/self";
 import { updateScheduleAction } from "../actions";
@@ -22,18 +28,67 @@ export default async function ScheduleDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const schedule = getSchedule(id);
+  const schedule = await getScheduleAsync(id);
   if (!schedule) notFound();
 
   const session = await getSession();
-  const users = listUsers();
-  const types = listScheduleTypes();
+  const users = await listUsersAsync();
+  const types = await listScheduleTypesAsync();
   const selfUserId = await getCurrentUserId();
+  const type = types.find((item) => item.id === schedule.typeId) ?? null;
+  const assignees = schedule.userIds
+    .map((userId) => users.find((user) => user.id === userId))
+    .filter((user): user is (typeof users)[number] => Boolean(user));
 
   const fmtDate = (d: Date) => format(d, "yyyy-MM-dd");
   const fmtTime = (d: Date) => format(d, "HH:mm");
+  const fmtDateTimeLocal = (d?: Date) =>
+    d ? format(d, "yyyy-MM-dd'T'HH:mm") : "";
+  const fmtDateLabel = (d: Date) =>
+    format(d, "yyyy年M月d日(EEE)", { locale: ja });
+
+  const timeRange = (() => {
+    const sameDay = isSameDay(schedule.startAt, schedule.endAt);
+    const startDate = fmtDateLabel(schedule.startAt);
+    const endDate = fmtDateLabel(schedule.endAt);
+    const startTime = fmtTime(schedule.startAt);
+    const endTime = fmtTime(schedule.endAt);
+    return sameDay
+      ? `${startDate} ${startTime} 〜 ${endTime}`
+      : `${startDate} ${startTime} 〜 ${endDate} ${endTime}`;
+  })();
 
   const update = updateScheduleAction.bind(null, id);
+  const caseParts: string[] = [];
+  if (schedule.caseNumber) caseParts.push(`案件番号：${schedule.caseNumber}`);
+  if (schedule.caseName) caseParts.push(schedule.caseName);
+  const caseLabel = caseParts.join("　");
+  const kanriSystemUrl =
+    process.env.NEXT_PUBLIC_KANRI_SYSTEM_URL?.replace(/\/+$/, "") ?? "";
+  const caseHref =
+    kanriSystemUrl && schedule.caseId
+      ? `${kanriSystemUrl}/cases/${schedule.caseId}`
+      : "";
+  const calendarCaseHref = schedule.caseId
+    ? `/calendar/cases/${schedule.caseId}`
+    : "";
+  const actualRange =
+    schedule.actualStartAt && schedule.actualEndAt
+      ? isSameDay(schedule.actualStartAt, schedule.actualEndAt)
+        ? `${fmtDateLabel(schedule.actualStartAt)} ${fmtTime(schedule.actualStartAt)} 〜 ${fmtTime(schedule.actualEndAt)}`
+        : `${fmtDateLabel(schedule.actualStartAt)} ${fmtTime(schedule.actualStartAt)} 〜 ${fmtDateLabel(schedule.actualEndAt)} ${fmtTime(schedule.actualEndAt)}`
+      : "";
+  const actualMinutesLabel =
+    typeof schedule.actualMinutes === "number"
+      ? formatMinutes(schedule.actualMinutes)
+      : "—";
+  const syncStatusLabel =
+    {
+      pending: "同期待ち",
+      synced: "同期済み",
+      failed: "同期失敗",
+      ignored: "同期対象外",
+    }[schedule.syncStatus] ?? schedule.syncStatus;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -44,7 +99,10 @@ export default async function ScheduleDetailPage({
         back={`/calendar/${id}`}
       />
       <main className="flex-1 px-6 py-5">
-        <div className="mx-auto" style={{ maxWidth: "720px" }}>
+        <div
+          className="mx-auto"
+          style={{ maxWidth: "var(--width-content-max)" }}
+        >
           <Link
             href="/calendar"
             className="inline-flex items-center gap-1 text-[13px] text-[var(--color-text-mid)] hover:text-[var(--color-text-strong)] mb-3"
@@ -60,7 +118,100 @@ export default async function ScheduleDetailPage({
             <DeleteScheduleButton id={id} />
           </div>
 
-          <div className="bg-white border border-[var(--color-border)] rounded-[var(--radius-m)] p-5">
+          <div className="bg-white border border-[var(--color-border)] rounded-[var(--radius-m)] p-5 mb-5">
+            <div className="flex items-center gap-2 mb-2">
+              {type ? (
+                <span
+                  className="inline-flex items-center px-2 py-0.5 text-[11px] rounded-[var(--radius-s)] border border-[var(--color-border)]"
+                  style={{
+                    background: scheduleTypeBackground(type.color),
+                    color: scheduleTypeForeground(type.color),
+                  }}
+                >
+                  {type.name}
+                </span>
+              ) : null}
+              {caseLabel ? (
+                caseHref ? (
+                  <Link
+                    href={caseHref}
+                    className="text-[12px] text-[var(--color-primary)] hover:underline"
+                  >
+                    {caseLabel}
+                  </Link>
+                ) : (
+                  <span className="text-[12px] text-[var(--color-text-mid)]">
+                    {caseLabel}
+                  </span>
+                )
+              ) : null}
+            </div>
+            <h2 className="text-[18px] font-bold text-[var(--color-text-strong)]">
+              {schedule.title}
+            </h2>
+            <dl className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-[13px]">
+              <div className="md:col-span-2">
+                <dt className="text-[12px] text-[var(--color-text-mid)]">
+                  担当者
+                </dt>
+                <dd className="mt-1 flex flex-wrap gap-1.5">
+                  {assignees.length === 0 ? (
+                    <span className="text-[14px] text-[var(--color-text-strong)]">
+                      —
+                    </span>
+                  ) : (
+                    assignees.map((user) => (
+                      <span
+                        key={user.id}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 text-[12px] rounded-[var(--radius-s)] border border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]"
+                      >
+                        <span className="font-medium">{user.name}</span>
+                        {user.id === selfUserId ? (
+                          <span className="text-[10px] px-1 rounded-[var(--radius-s)] bg-[var(--color-primary)] text-white">
+                            自分
+                          </span>
+                        ) : null}
+                      </span>
+                    ))
+                  )}
+                </dd>
+              </div>
+              <Row label="場所" value={schedule.location ?? "—"} />
+              <Row label="時間" value={timeRange} />
+              <Row
+                label="ステータス"
+                value={SCHEDULE_STATUS_LABEL[schedule.status]}
+              />
+              <Row label="実績時間" value={actualMinutesLabel} />
+              <Row label="実績開始・終了" value={actualRange || "—"} />
+              <Row label="Lark同期" value={syncStatusLabel} />
+            </dl>
+            {calendarCaseHref ? (
+              <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
+                <Link
+                  href={calendarCaseHref}
+                  className="text-[13px] text-[var(--color-primary)] hover:underline"
+                >
+                  案件別の予定と実績を見る
+                </Link>
+              </div>
+            ) : null}
+            {schedule.memo ? (
+              <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
+                <div className="text-[12px] text-[var(--color-text-mid)] mb-1">
+                  メモ
+                </div>
+                <p className="text-[14px] whitespace-pre-wrap text-[var(--color-text-strong)]">
+                  {schedule.memo}
+                </p>
+              </div>
+            ) : null}
+          </div>
+
+          <h2 className="text-[14px] font-bold text-[var(--color-text-strong)] mb-3">
+            編集する
+          </h2>
+          <div className="bg-white border border-[var(--color-border)] rounded-[var(--radius-m)] p-6">
             <ScheduleForm
               users={users}
               scheduleTypes={types}
@@ -73,9 +224,17 @@ export default async function ScheduleDetailPage({
                 endDate: fmtDate(schedule.endAt),
                 startTime: fmtTime(schedule.startAt),
                 endTime: fmtTime(schedule.endAt),
+                caseId: schedule.caseId ? String(schedule.caseId) : "",
                 caseNumber: schedule.caseNumber ?? "",
+                caseName: schedule.caseName ?? "",
                 location: schedule.location ?? "",
                 memo: schedule.memo ?? "",
+                status: schedule.status,
+                actualStartAt: fmtDateTimeLocal(schedule.actualStartAt),
+                actualEndAt: fmtDateTimeLocal(schedule.actualEndAt),
+                actualMinutes: schedule.actualMinutes
+                  ? String(schedule.actualMinutes)
+                  : "",
               }}
               selfUserId={selfUserId}
               initialUserIds={schedule.userIds}
@@ -88,4 +247,21 @@ export default async function ScheduleDetailPage({
       </main>
     </div>
   );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-[12px] text-[var(--color-text-mid)]">{label}</dt>
+      <dd className="text-[14px] text-[var(--color-text-strong)]">{value}</dd>
+    </div>
+  );
+}
+
+function formatMinutes(minutes: number) {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours === 0) return `${rest}分`;
+  if (rest === 0) return `${hours}時間`;
+  return `${hours}時間${rest}分`;
 }

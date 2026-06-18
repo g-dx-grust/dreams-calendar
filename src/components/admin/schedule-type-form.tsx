@@ -2,26 +2,37 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { Check } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SCHEDULE_TYPE_PALETTE } from "@/lib/color-palette";
-
-const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+import {
+  isScheduleTypeColorToken,
+  normalizeScheduleTypeColor,
+  scheduleTypeBackground,
+  scheduleTypeForeground,
+  SCHEDULE_TYPE_COLOR_OPTIONS,
+} from "@/components/calendar/color-utils";
 
 const formSchema = z.object({
   name: z.string().min(1, "種別名を入力してください").max(50),
-  color: z.string().regex(HEX_RE, "色を選択してください"),
+  color: z
+    .string()
+    .refine(
+      (value) => Boolean(isScheduleTypeColorToken(value)),
+      "色を選択してください",
+    ),
 });
 
 export type ScheduleTypeFormValues = z.infer<typeof formSchema>;
 
 type Props = {
-  defaultValues?: Partial<ScheduleTypeFormValues>;
+  defaultValues?: {
+    name?: string;
+    color?: string | null;
+  };
   submitLabel: string;
   cancelHref: string;
   action: (
@@ -42,11 +53,13 @@ export function ScheduleTypeForm({
     register,
     handleSubmit,
     watch,
-    setValue,
     formState: { errors },
   } = useForm<ScheduleTypeFormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { name: "", color: SCHEDULE_TYPE_PALETTE[5], ...defaultValues },
+    defaultValues: {
+      name: defaultValues?.name ?? "",
+      color: normalizeScheduleTypeColor(defaultValues?.color),
+    },
   });
 
   const colorValue = watch("color");
@@ -87,36 +100,32 @@ export function ScheduleTypeForm({
         <Label>
           色 <span className="text-[var(--color-danger)]">*</span>
         </Label>
-        <input type="hidden" {...register("color")} />
-        <div className="flex flex-wrap gap-2">
-          {SCHEDULE_TYPE_PALETTE.map((c) => {
-            const selected = colorValue === c;
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {SCHEDULE_TYPE_COLOR_OPTIONS.map((option) => {
+            const selected = colorValue === option.value;
             return (
-              <button
-                key={c}
-                type="button"
-                onClick={() =>
-                  setValue("color", c, { shouldValidate: true, shouldDirty: true })
-                }
-                aria-label={`色を ${c} に設定`}
-                aria-pressed={selected}
-                title={c}
+              <label
+                key={option.value}
                 className={
-                  "relative w-8 h-8 rounded-[var(--radius-s)] border transition-shadow " +
+                  "flex h-9 cursor-pointer items-center gap-2 rounded-[var(--radius-s)] border px-2 text-[12px] " +
                   (selected
-                    ? "border-[var(--color-text-strong)] ring-2 ring-[var(--color-primary)] ring-offset-1"
-                    : "border-black/10 hover:border-[var(--color-text-mid)]")
+                    ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]"
+                    : "border-[var(--color-border)] bg-white text-[var(--color-text-strong)] hover:border-[var(--color-border-strong)]")
                 }
-                style={{ background: c }}
               >
-                {selected ? (
-                  <Check
-                    size={16}
-                    className="absolute inset-0 m-auto"
-                    color={isLight(c) ? "#1F2329" : "#fff"}
-                  />
-                ) : null}
-              </button>
+                <input
+                  type="radio"
+                  value={option.value}
+                  className="sr-only"
+                  {...register("color")}
+                />
+                <span
+                  aria-hidden="true"
+                  className="h-4 w-4 shrink-0 rounded-[var(--radius-s)] border border-[var(--color-border)]"
+                  style={{ background: scheduleTypeBackground(option.value) }}
+                />
+                <span className="truncate">{option.label}</span>
+              </label>
             );
           })}
         </div>
@@ -131,10 +140,10 @@ export function ScheduleTypeForm({
         <Label>プレビュー</Label>
         <div className="bg-[var(--color-background)] border border-[var(--color-border)] rounded-[var(--radius-s)] p-3">
           <span
-            className="inline-block px-2 py-1 text-[12px] leading-tight border border-black/10 rounded-[var(--radius-s)]"
+            className="inline-block px-2 py-1 text-[12px] leading-tight border border-[var(--color-border)] rounded-[var(--radius-s)]"
             style={{
-              background: HEX_RE.test(colorValue ?? "") ? colorValue : "#646A73",
-              color: isLight(colorValue ?? "") ? "#1F2329" : "#fff",
+              background: scheduleTypeBackground(colorValue),
+              color: scheduleTypeForeground(colorValue),
             }}
           >
             {nameValue || "種別名"}
@@ -164,13 +173,4 @@ export function ScheduleTypeForm({
       </div>
     </form>
   );
-}
-
-function isLight(hex: string) {
-  if (!HEX_RE.test(hex)) return false;
-  const c = hex.replace("#", "");
-  const r = parseInt(c.slice(0, 2), 16);
-  const g = parseInt(c.slice(2, 4), 16);
-  const b = parseInt(c.slice(4, 6), 16);
-  return r * 0.299 + g * 0.587 + b * 0.114 > 186;
 }

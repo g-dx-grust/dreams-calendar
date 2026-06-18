@@ -19,6 +19,9 @@ export type ScheduleStatus =
   | "carried_over"
   | "cancelled";
 
+export type CalendarSyncSource = "app" | "lark";
+export type CalendarSyncStatus = "pending" | "synced" | "failed" | "ignored";
+
 export const SCHEDULE_STATUS_LABEL: Record<ScheduleStatus, string> = {
   planned: "予定",
   in_progress: "進行中",
@@ -49,12 +52,34 @@ export type Schedule = {
   id: string;
   userIds: string[]; // 担当者（複数可、最低 1 人）
   title: string;
+  caseId?: number;
   caseNumber?: string;
+  caseName?: string;
   typeId: string;
   startAt: Date;
   endAt: Date;
   isAllDay: boolean;
+  actualStartAt?: Date;
+  actualEndAt?: Date;
+  actualMinutes?: number;
   location?: string;
   memo?: string;
   status: ScheduleStatus;
+  larkEventId?: string;
+  syncSource: CalendarSyncSource;
+  syncStatus: CalendarSyncStatus;
+  lastSyncedAt?: Date;
+  syncError?: string;
+};
+
+export type ProjectScheduleLog = {
+  id: string;
+  caseId: number;
+  scheduleId: string;
+  userId: string;
+  workDate: string;
+  minutes: number;
+  memo?: string;
+  createdAt: Date;
+  updatedAt: Date;
 };

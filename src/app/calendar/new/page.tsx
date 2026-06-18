@@ -2,7 +2,7 @@ import { format } from "date-fns";
 import { getSession } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
 import { ScheduleForm } from "@/components/calendar/schedule-form";
-import { listScheduleTypes, listUsers } from "@/lib/schedule-store";
+import { listScheduleTypesAsync, listUsersAsync } from "@/lib/schedule-store";
 import { getCurrentUserId } from "@/lib/self";
 import { createScheduleAction } from "../actions";
 
@@ -10,8 +10,8 @@ export const dynamic = "force-dynamic";
 
 export default async function NewSchedulePage() {
   const session = await getSession();
-  const users = listUsers();
-  const types = listScheduleTypes();
+  const users = await listUsersAsync();
+  const types = await listScheduleTypesAsync();
   const selfUserId = await getCurrentUserId();
 
   // 初期値：今日の 9:00–10:00、自分が担当者

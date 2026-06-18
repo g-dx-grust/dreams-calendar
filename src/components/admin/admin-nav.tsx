@@ -6,7 +6,7 @@ const TABS: Tab[] = [
   { href: "/admin/users", label: "社員マスタ" },
   { href: "/admin/schedule-types", label: "予定種別マスタ" },
   { href: "/admin/calendar-settings", label: "カレンダー設定" },
-  { href: "/admin/notifications", label: "招待通知ログ" },
+  { href: "/admin/notifications", label: "通知ログ" },
 ];
 
 export function AdminNav({ active }: { active: string }) {

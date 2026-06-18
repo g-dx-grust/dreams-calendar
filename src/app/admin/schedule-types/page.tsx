@@ -4,26 +4,24 @@ import { getSession } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
 import { AdminNav } from "@/components/admin/admin-nav";
 import { AdminDeleteButton } from "@/components/admin/delete-button";
-import { listScheduleTypes } from "@/lib/schedule-type-store";
-import { listSchedules } from "@/lib/schedule-store";
+import { listScheduleTypesAsync } from "@/lib/schedule-type-store";
+import { listSchedulesAsync } from "@/lib/schedule-store";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { deleteScheduleTypeAction } from "./actions";
+import {
+  scheduleTypeBackground,
+  scheduleTypeForeground,
+} from "@/components/calendar/color-utils";
 
 export const dynamic = "force-dynamic";
 
-function isLight(hex: string) {
-  const c = hex.replace("#", "");
-  const r = parseInt(c.slice(0, 2), 16);
-  const g = parseInt(c.slice(2, 4), 16);
-  const b = parseInt(c.slice(4, 6), 16);
-  return r * 0.299 + g * 0.587 + b * 0.114 > 186;
-}
-
 export default async function ScheduleTypesAdminPage() {
   const session = await getSession();
-  const types = listScheduleTypes();
-  const schedules = listSchedules();
+  const [types, schedules] = await Promise.all([
+    listScheduleTypesAsync(),
+    listSchedulesAsync(),
+  ]);
 
   const usageCount = new Map<string, number>();
   for (const s of schedules) {
@@ -83,10 +81,10 @@ export default async function ScheduleTypesAdminPage() {
                       >
                         <Td>
                           <span
-                            className="inline-block px-2 py-1 text-[12px] leading-tight border border-black/10 rounded-[var(--radius-s)]"
+                            className="inline-block px-2 py-1 text-[12px] leading-tight border border-[var(--color-border)] rounded-[var(--radius-s)]"
                             style={{
-                              background: t.color,
-                              color: isLight(t.color) ? "#1F2329" : "#fff",
+                              background: scheduleTypeBackground(t.color),
+                              color: scheduleTypeForeground(t.color),
                             }}
                           >
                             {t.name}

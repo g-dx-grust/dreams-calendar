@@ -5,7 +5,7 @@ import {
   getVisibleUserIds,
   removeVisibleUserId,
 } from "@/lib/calendar-user-pref";
-import { listUsers } from "@/lib/user-store";
+import { listUsersAsync } from "@/lib/user-store";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   const action = String(form.get("action") ?? "");
   const userId = String(form.get("userId") ?? "");
 
-  const users = listUsers();
+  const users = await listUsersAsync();
   if (!users.some((u) => u.id === userId)) {
     return NextResponse.json({ error: "invalid user" }, { status: 400 });
   }

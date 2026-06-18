@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Check, FileText } from "lucide-react";
 import { submitDailyReportAction } from "@/app/calendar/daily-report-actions";
 import type { DailyReport } from "./types";
@@ -10,6 +11,7 @@ type Props = {
   userName: string;
   reportDate: string; // YYYY-MM-DD
   initialReport: DailyReport | null;
+  autoDraft?: string;
 };
 
 export function DailyReportCell({
@@ -17,17 +19,42 @@ export function DailyReportCell({
   userName,
   reportDate,
   initialReport,
+  autoDraft,
 }: Props) {
+  const resetKey = [
+    userId,
+    reportDate,
+    initialReport?.id ?? "new",
+    initialReport?.updatedAt.getTime() ?? 0,
+    initialReport?.body ?? "",
+    autoDraft ?? "",
+  ].join(":");
+
+  return (
+    <DailyReportCellContent
+      key={resetKey}
+      userId={userId}
+      userName={userName}
+      reportDate={reportDate}
+      initialReport={initialReport}
+      autoDraft={autoDraft}
+    />
+  );
+}
+
+function DailyReportCellContent({
+  userId,
+  userName,
+  reportDate,
+  initialReport,
+  autoDraft,
+}: Props) {
+  const router = useRouter();
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const [body, setBody] = useState(initialReport?.body ?? "");
   const [serverError, setServerError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(Boolean(initialReport));
   const [isPending, startTransition] = useTransition();
-
-  useEffect(() => {
-    setSubmitted(Boolean(initialReport));
-    setBody(initialReport?.body ?? "");
-  }, [initialReport]);
 
   function open() {
     setServerError(null);
@@ -54,6 +81,7 @@ export function DailyReportCell({
       }
       setSubmitted(true);
       close();
+      router.refresh();
     });
   }
 
@@ -84,10 +112,22 @@ export function DailyReportCell({
 
       <dialog
         ref={dialogRef}
-        className="rounded-[var(--radius-m)] border border-[var(--color-border)] p-0 backdrop:bg-black/40 w-[min(92vw,560px)]"
+        className="fixed inset-0 m-auto rounded-[var(--radius-m)] border border-[var(--color-border)] p-0 backdrop:bg-black/40"
+        style={{
+          width:
+            "min(calc(100vw - var(--space-m) - var(--space-m)), var(--width-daily-report-modal))",
+          maxHeight: "calc(100dvh - var(--space-l) - var(--space-l))",
+        }}
+        onClick={(event) => {
+          if (event.target === event.currentTarget) close();
+        }}
         onClose={() => setServerError(null)}
       >
-        <form onSubmit={onSubmit} className="flex flex-col">
+        <form
+          onSubmit={onSubmit}
+          className="flex flex-col"
+          style={{ maxHeight: "inherit" }}
+        >
           <div className="px-5 py-4 border-b border-[var(--color-border)]">
             <h2 className="text-[16px] font-bold text-[var(--color-text-strong)]">
               日報を{submitted ? "編集" : "提出"}する
@@ -97,10 +137,21 @@ export function DailyReportCell({
             </p>
           </div>
 
-          <div className="px-5 py-4">
-            <label className="block text-[13px] text-[var(--color-text-strong)] mb-1.5">
-              本文
-            </label>
+          <div className="px-5 py-4 overflow-auto">
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <label className="block text-[13px] text-[var(--color-text-strong)]">
+                本文
+              </label>
+              {autoDraft ? (
+                <button
+                  type="button"
+                  onClick={() => setBody(autoDraft)}
+                  className="text-[12px] text-[var(--color-primary)] hover:underline"
+                >
+                  完了予定から作成
+                </button>
+              ) : null}
+            </div>
             <textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
