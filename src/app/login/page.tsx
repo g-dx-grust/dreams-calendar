@@ -48,7 +48,7 @@ export default async function LoginPage({
         {configured ? (
           <div className="space-y-2">
             <Link
-              href="/calendar"
+              href="/api/auth/preview"
               className={cn(buttonVariants({ variant: "primary", size: "lg" }), "w-full")}
             >
               カレンダーを確認する
@@ -63,7 +63,7 @@ export default async function LoginPage({
         ) : (
           <div className="space-y-3">
             <Link
-              href="/calendar"
+              href="/api/auth/preview"
               className={cn(buttonVariants({ variant: "primary", size: "lg" }), "w-full")}
             >
               カレンダーを確認する
