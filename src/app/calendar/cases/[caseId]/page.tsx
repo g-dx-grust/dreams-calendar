@@ -84,7 +84,7 @@ export default async function CalendarCasePage({
           <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
             <div>
               <h1 className="text-[18px] font-bold text-[var(--color-text-strong)]">
-                案件別の予定と実績
+                案件別の予定と作業時間
               </h1>
               <p className="mt-1 text-[13px] text-[var(--color-text-mid)]">
                 {caseNumber}　{caseName}
@@ -103,7 +103,10 @@ export default async function CalendarCasePage({
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <SummaryItem label="予定件数" value={`${schedules.length}件`} />
             <SummaryItem label="予定時間" value={formatMinutes(plannedMinutes)} />
-            <SummaryItem label="実績時間" value={formatMinutes(actualMinutes)} />
+            <SummaryItem
+              label="作業時間（実施時間）"
+              value={formatMinutes(actualMinutes)}
+            />
           </div>
 
           <section className="mt-4 overflow-hidden rounded-[var(--radius-m)] border border-[var(--color-border)] bg-white">
@@ -126,7 +129,7 @@ export default async function CalendarCasePage({
                       <Th>担当者</Th>
                       <Th>種別</Th>
                       <Th>ステータス</Th>
-                      <Th align="right">実績</Th>
+                      <Th align="right">作業時間</Th>
                     </tr>
                   </thead>
                   <tbody>
@@ -152,7 +155,7 @@ export default async function CalendarCasePage({
             </div>
             {logs.length === 0 ? (
               <p className="px-4 py-5 text-[13px] text-[var(--color-text-mid)]">
-                完了済みの実績ログはまだありません。
+                完了済みの作業時間ログはまだありません。
               </p>
             ) : (
               <div className="overflow-auto">
@@ -162,7 +165,7 @@ export default async function CalendarCasePage({
                       <Th>作業日</Th>
                       <Th>担当者</Th>
                       <Th>予定</Th>
-                      <Th align="right">実績</Th>
+                      <Th align="right">作業時間</Th>
                     </tr>
                   </thead>
                   <tbody>

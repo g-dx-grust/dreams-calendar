@@ -29,6 +29,14 @@ CREATE TABLE schedules (
   actual_start_at TIMESTAMPTZ,
   actual_end_at TIMESTAMPTZ,
   actual_minutes INTEGER,
+  actual_memo TEXT,                         -- 完了時の作業メモ
+  online_meeting_url TEXT,                  -- オンライン予定の会議URL
+  lark_event_id VARCHAR(200),
+  sync_source VARCHAR(20) NOT NULL DEFAULT 'app',
+  sync_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  sync_error TEXT,
+  last_synced_at TIMESTAMPTZ,
+  deleted_at TIMESTAMPTZ,
   created_by UUID REFERENCES users(id),
   updated_by UUID REFERENCES users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -65,6 +73,8 @@ CREATE TABLE daily_reports (
   user_id UUID REFERENCES users(id),
   report_date DATE NOT NULL,
   body TEXT NOT NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'submitted',
+  lark_notified_at TIMESTAMPTZ,
   submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (user_id, report_date)
@@ -74,11 +84,11 @@ CREATE INDEX idx_daily_reports_report_date ON daily_reports(report_date);
 CREATE INDEX idx_daily_reports_user_id ON daily_reports(user_id);
 ```
 
-提出時は Lark IM で確認通知を送信します（送信先チャットの DB 管理は次フェーズ。現状は本人 Lark への DM）。
+提出時は管理者（`users.role = 'admin'`）へ Lark IM で確認通知を送信します。通知には該当日の日報へ遷移する URL を含めます。管理者が未設定の評価環境では、従来どおり本人への DM にフォールバックします。
 
-### 4. プロジェクト稼働時間ログ (`project_schedule_logs`) ※Phase 2以降
+### 4. プロジェクト稼働時間ログ (`project_schedule_logs`)
 
-案件ごとの実働時間を集計するための中間テーブルです。
+案件ごとの作業時間（実施時間）を集計するための中間テーブルです。
 
 ```sql
 CREATE TABLE project_schedule_logs (
@@ -93,6 +103,49 @@ CREATE TABLE project_schedule_logs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
+
+予定が `done` になり、作業時間（実施時間）が確定した時点で同期します。予定の `start_at` / `end_at` は当初予定として残し、`actual_*` との差分を分析に使います。
+
+### 5. カレンダーユーザープロフィール (`calendar_user_profiles`)
+
+共有 `users` テーブルを再定義せず、G-DX For スケジュール固有の Lark 補助情報を保存します。
+
+```sql
+CREATE TABLE calendar_user_profiles (
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  lark_open_id TEXT UNIQUE,
+  lark_union_id TEXT,
+  lark_user_id TEXT,
+  lark_calendar_id TEXT,
+  avatar_url TEXT,
+  last_login_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+`lark_calendar_id` は、Lark user access token で本人の主カレンダーIDを取得できた時点でキャッシュします。
+
+### 6. カレンダーユーザーセッション (`calendar_user_sessions`)
+
+Lark OAuthログイン後のアプリセッションを保存します。Cookieにはランダムトークンのみを入れ、DBにはハッシュ化した値を保存します。
+
+```sql
+CREATE TABLE calendar_user_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  lark_access_token TEXT,
+  lark_refresh_token TEXT,
+  lark_token_expires_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+Lark会議URL発行では、ログイン中ユーザー本人の `lark_access_token` を使います。他人の主カレンダーへ代理作成しません。
 
 ## 初期データ
 
@@ -111,6 +164,7 @@ INSERT INTO schedule_types (name, color, sort_order) VALUES
   ('来客',     '#4E83FF', 9),  -- Primary hover
   ('移動',     '#1F2329', 10), -- Text 強
   ('休み',     '#F5F6F7', 11), -- Background
-  ('その他',   '#FFFFFF', 12); -- Surface
+  ('その他',   '#FFFFFF', 12), -- Surface
+  ('オンライン', '#3370FF', 13); -- Primary
 ```
 ※色は `dreaMs` デザインシステムのカラートークンに準拠して割り当てています。管理画面から変更可能にする想定です。

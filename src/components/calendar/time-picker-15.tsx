@@ -99,7 +99,7 @@ export function TimePicker15({
         <div
           ref={listRef}
           role="listbox"
-          className="absolute top-full left-0 mt-1 max-h-64 overflow-auto bg-white border border-[var(--color-border)] rounded-[var(--radius-s)] shadow-md z-50 w-[120px]"
+          className="absolute top-full left-0 z-50 mt-1 max-h-64 w-[120px] overflow-auto rounded-[var(--radius-s)] border border-[var(--color-border)] bg-white"
         >
           {QUARTER_OPTIONS.map((opt) => {
             const active = opt === value;

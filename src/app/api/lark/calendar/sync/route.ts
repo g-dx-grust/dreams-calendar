@@ -17,7 +17,7 @@ type SyncRequest = {
 };
 
 function isAuthorized(request: Request) {
-  if (!larkConfig.syncSecret) return true;
+  if (!larkConfig.syncSecret) return process.env.NODE_ENV !== "production";
   return request.headers.get("x-lark-sync-secret") === larkConfig.syncSecret;
 }
 

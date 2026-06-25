@@ -1,3 +1,7 @@
+import {
+  getLarkAppAccessToken,
+  postLarkApiWithAppToken,
+} from "./provider-client";
 import { larkConfig } from "./config";
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -16,7 +20,6 @@ export type LarkUserInfo = {
   tenant_key?: string;
 };
 
-type AppAccessToken = { app_access_token: string; expire: number };
 type UserAccessToken = {
   access_token: string;
   refresh_token: string;
@@ -25,44 +28,35 @@ type UserAccessToken = {
   token_type: "Bearer";
 };
 
-async function getAppAccessToken(): Promise<Result<string>> {
-  const res = await fetch(
-    `${larkConfig.openApiBase}/auth/v3/app_access_token/internal`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        app_id: larkConfig.appId,
-        app_secret: larkConfig.appSecret,
-      }),
-      cache: "no-store",
-    },
-  );
-  if (!res.ok) return { ok: false, error: `app_access_token: ${res.status}` };
-  const json = (await res.json()) as { code: number; msg: string } & AppAccessToken;
-  if (json.code !== 0) return { ok: false, error: json.msg };
-  return { ok: true, data: json.app_access_token };
-}
+type RefreshAccessToken = {
+  access_token: string;
+  refresh_token?: string;
+  expires_in?: number;
+  refresh_expires_in?: number;
+  token_type?: "Bearer";
+};
 
 export async function exchangeCode(
   code: string,
 ): Promise<Result<UserAccessToken>> {
-  const tokenResult = await getAppAccessToken();
-  if (!tokenResult.ok) return tokenResult;
-
-  const res = await fetch(`${larkConfig.openApiBase}/authen/v1/access_token`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${tokenResult.data}`,
-    },
-    body: JSON.stringify({ grant_type: "authorization_code", code }),
-    cache: "no-store",
-  });
-  if (!res.ok) return { ok: false, error: `access_token: ${res.status}` };
-  const json = (await res.json()) as { code: number; msg: string; data?: UserAccessToken };
-  if (json.code !== 0 || !json.data) return { ok: false, error: json.msg };
-  return { ok: true, data: json.data };
+  if (!larkConfig.appId || !larkConfig.appSecret) {
+    return { ok: false, error: "Lark認証情報が未設定です" };
+  }
+  try {
+    const data = await postLarkApiWithAppToken<UserAccessToken>(
+      "/authen/v1/access_token",
+      { grant_type: "authorization_code", code },
+    );
+    return { ok: true, data };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Larkアクセストークンの取得に失敗しました",
+    };
+  }
 }
 
 export async function fetchUserInfo(
@@ -74,6 +68,31 @@ export async function fetchUserInfo(
   });
   if (!res.ok) return { ok: false, error: `user_info: ${res.status}` };
   const json = (await res.json()) as { code: number; msg: string; data?: LarkUserInfo };
+  if (json.code !== 0 || !json.data) return { ok: false, error: json.msg };
+  return { ok: true, data: json.data };
+}
+
+export async function refreshUserAccessToken(
+  refreshToken: string,
+): Promise<Result<RefreshAccessToken>> {
+  const appToken = await getLarkAppAccessToken();
+  if (!appToken.ok) return { ok: false, error: appToken.error };
+
+  const res = await fetch(`${larkConfig.openApiBase}/authen/v1/refresh_access_token`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${appToken.data}`,
+    },
+    body: JSON.stringify({ grant_type: "refresh_token", refresh_token: refreshToken }),
+    cache: "no-store",
+  });
+  if (!res.ok) return { ok: false, error: `refresh_access_token: ${res.status}` };
+  const json = (await res.json()) as {
+    code: number;
+    msg: string;
+    data?: RefreshAccessToken;
+  };
   if (json.code !== 0 || !json.data) return { ok: false, error: json.msg };
   return { ok: true, data: json.data };
 }

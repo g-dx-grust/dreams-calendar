@@ -9,6 +9,8 @@ export type CalendarUser = {
   name: string;
   avatarUrl?: string | null;
   larkOpenId?: string | null;
+  role?: string | null;
+  isAdmin?: boolean;
 };
 
 // see: docs/02_database_schema.md schedules.status
@@ -62,6 +64,8 @@ export type Schedule = {
   actualStartAt?: Date;
   actualEndAt?: Date;
   actualMinutes?: number;
+  actualMemo?: string;
+  onlineMeetingUrl?: string;
   location?: string;
   memo?: string;
   status: ScheduleStatus;

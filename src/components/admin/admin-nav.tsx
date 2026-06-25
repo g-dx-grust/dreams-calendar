@@ -11,7 +11,7 @@ const TABS: Tab[] = [
 
 export function AdminNav({ active }: { active: string }) {
   return (
-    <nav className="flex border-b border-[var(--color-border)] mb-5">
+    <nav className="mb-5 inline-flex max-w-full overflow-auto rounded-[var(--radius-m)] border border-[var(--color-border)] bg-white">
       {TABS.map((t) => {
         const isActive = active === t.href;
         return (
@@ -19,10 +19,10 @@ export function AdminNav({ active }: { active: string }) {
             key={t.href}
             href={t.href}
             className={
-              "px-4 h-10 inline-flex items-center text-[13px] font-medium border-b-2 -mb-px " +
+              "h-9 shrink-0 border-r border-[var(--color-border)] px-4 inline-flex items-center text-[13px] font-medium last:border-r-0 " +
               (isActive
-                ? "text-[var(--color-primary)] border-[var(--color-primary)]"
-                : "text-[var(--color-text-mid)] border-transparent hover:text-[var(--color-text-strong)]")
+                ? "bg-[var(--color-primary)] text-white"
+                : "text-[var(--color-text-mid)] hover:bg-[var(--color-background)] hover:text-[var(--color-text-strong)]")
             }
           >
             {t.label}

@@ -28,7 +28,7 @@ function fmtDate(d: Date) {
 
 function periodTitle(view: CalendarView, date: Date) {
   if (view === "day") {
-    return format(date, "yyyy年M月d日(EEE)", { locale: ja });
+    return `${format(date, "yyyy年M月d日", { locale: ja })}（${format(date, "EEE", { locale: ja })}）`;
   }
   if (view === "week") {
     const s = startOfWeek(date, { weekStartsOn: 0 });
@@ -53,15 +53,23 @@ export function CalendarHeader({ view, date, dataMode = "database" }: Props) {
   const today = new Date();
 
   return (
-    <div className="space-y-3 mb-4">
+    <div className="mb-4 space-y-4">
       {/* タイトル + 追加ボタン */}
-      <div className="flex items-baseline justify-between">
-        <div>
-          <h1 className="text-[18px] font-bold text-[var(--color-text-strong)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-[22px] font-bold leading-tight text-[var(--color-text-strong)]">
             {periodTitle(view, date)}
-          </h1>
+            </h1>
+            <Link
+              href={buildUrl(view, today)}
+              className={cn(buttonVariants({ variant: "secondary", size: "sm" }))}
+            >
+              今日
+            </Link>
+          </div>
           {dataMode === "mock" ? (
-            <p className="text-[12px] text-[var(--color-text-weak)] mt-0.5">
+            <p className="mt-1 text-[12px] text-[var(--color-text-weak)]">
               モックデータを表示中（予定データ未登録）
             </p>
           ) : null}
@@ -105,23 +113,17 @@ export function CalendarHeader({ view, date, dataMode = "database" }: Props) {
             href={buildUrl(view, shift(view, date, -1))}
             className={cn(
               buttonVariants({ variant: "secondary", size: "sm" }),
-              "px-2",
+              "h-10 w-10 px-0",
             )}
             aria-label="前へ"
           >
             <ChevronLeft size={16} />
           </Link>
           <Link
-            href={buildUrl(view, today)}
-            className={cn(buttonVariants({ variant: "secondary", size: "sm" }))}
-          >
-            今日
-          </Link>
-          <Link
             href={buildUrl(view, shift(view, date, 1))}
             className={cn(
               buttonVariants({ variant: "secondary", size: "sm" }),
-              "px-2",
+              "h-10 w-10 px-0",
             )}
             aria-label="次へ"
           >
@@ -134,7 +136,7 @@ export function CalendarHeader({ view, date, dataMode = "database" }: Props) {
               if (!e.target.value) return;
               router.push(buildUrl(view, new Date(e.target.value)));
             }}
-            className="h-8 px-2 text-[13px] bg-white text-[var(--color-text-strong)] border border-[var(--color-border)] rounded-[var(--radius-s)] focus:border-[var(--color-primary)] focus:outline-none"
+            className="h-10 px-3 text-[13px] bg-white text-[var(--color-text-strong)] border border-[var(--color-border)] rounded-[var(--radius-m)] focus:border-[var(--color-primary)] focus:outline-none"
           />
         </div>
       </div>

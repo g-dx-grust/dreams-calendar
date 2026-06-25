@@ -4,12 +4,15 @@
  *
  * - 環境変数（LARK_APP_ID/LARK_APP_SECRET）が未設定 or 受信者の larkOpenId がない場合は
  *   コンソールログのみ（DB 接続前の暫定実装）
- * - 設定済みなら IM API /im/v1/messages?receive_id_type=open_id にテキスト送信
+ * - 設定済みなら tenant token で IM API /im/v1/messages?receive_id_type=open_id に送信
  */
 
-import { format } from "date-fns";
+import { format, isSameDay } from "date-fns";
 import { ja } from "date-fns/locale";
-import { larkConfig } from "./config";
+import {
+  postLarkApiWithTenantToken,
+  toLarkApiError,
+} from "./provider-client";
 import type {
   CalendarUser,
   DailyReport,
@@ -20,7 +23,6 @@ import type {
 type NotifyResult = { ok: true } | { ok: false; reason: string };
 
 declare global {
-  // eslint-disable-next-line no-var
   var __gdxNotificationLog: NotificationLogEntry[] | undefined;
 }
 
@@ -31,7 +33,11 @@ export type NotificationLogEntry = {
   title: string;
   delivered: boolean;
   reason?: string;
-  kind?: "invitation" | "daily_report" | "daily_report_reply";
+  kind?:
+    | "invitation"
+    | "schedule_changed"
+    | "daily_report"
+    | "daily_report_reply";
 };
 
 function logEntry(e: NotificationLogEntry) {
@@ -65,55 +71,77 @@ function buildBody(schedule: Schedule, fromName?: string) {
     .join("\n");
 }
 
-async function getAppAccessToken(): Promise<string | null> {
-  if (!larkConfig.appId || !larkConfig.appSecret) return null;
-  try {
-    const res = await fetch(
-      `${larkConfig.openApiBase}/auth/v3/app_access_token/internal`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          app_id: larkConfig.appId,
-          app_secret: larkConfig.appSecret,
-        }),
-        cache: "no-store",
-      },
-    );
-    if (!res.ok) return null;
-    const json = (await res.json()) as { code: number; app_access_token: string };
-    if (json.code !== 0) return null;
-    return json.app_access_token;
-  } catch {
-    return null;
-  }
+function buildScheduleChangedBody(
+  before: Schedule,
+  after: Schedule,
+  fromName?: string,
+) {
+  const head = fromName
+    ? `${fromName} さんが予定を変更しました`
+    : "予定が変更されました";
+  return [
+    head,
+    "",
+    `件名：${after.title}`,
+    `変更前：${formatScheduleRange(before)}`,
+    `変更後：${formatScheduleRange(after)}`,
+    after.location ? `場所：${after.location}` : null,
+    after.caseNumber ? `案件番号：${after.caseNumber}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function formatScheduleRange(schedule: Schedule) {
+  const start = format(schedule.startAt, "yyyy/MM/dd(EEE) HH:mm", {
+    locale: ja,
+  });
+  const end = isSameDay(schedule.startAt, schedule.endAt)
+    ? format(schedule.endAt, "HH:mm")
+    : format(schedule.endAt, "yyyy/MM/dd(EEE) HH:mm", { locale: ja });
+  return `${start} 〜 ${end}`;
 }
 
 async function postIm(
-  token: string,
   openId: string,
   body: string,
 ): Promise<NotifyResult> {
-  const res = await fetch(
-    `${larkConfig.openApiBase}/im/v1/messages?receive_id_type=open_id`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+  try {
+    await postLarkApiWithTenantToken<unknown>(
+      "/im/v1/messages",
+      {
         receive_id: openId,
         msg_type: "text",
         content: JSON.stringify({ text: body }),
-      }),
-      cache: "no-store",
-    },
-  );
-  if (!res.ok) return { ok: false, reason: `HTTP ${res.status}` };
-  const json = (await res.json()) as { code: number; msg: string };
-  if (json.code !== 0) return { ok: false, reason: json.msg };
-  return { ok: true };
+      },
+      { receive_id_type: "open_id" },
+    );
+    return { ok: true };
+  } catch (error) {
+    const larkError = toLarkApiError(error, "Lark通知を送信できませんでした");
+    return { ok: false, reason: larkError.message };
+  }
+}
+
+async function postInteractiveCard(
+  openId: string,
+  card: Record<string, unknown>,
+): Promise<NotifyResult> {
+  try {
+    await postLarkApiWithTenantToken<unknown>(
+      "/im/v1/messages",
+      {
+        receive_id: openId,
+        msg_type: "interactive",
+        content: JSON.stringify(card),
+      },
+      { receive_id_type: "open_id" },
+    );
+    return { ok: true };
+  } catch (error) {
+    const larkError = toLarkApiError(error, "Lark通知を送信できませんでした");
+    return { ok: false, reason: larkError.message };
+  }
 }
 
 export async function sendInvitation(
@@ -142,18 +170,7 @@ export async function sendInvitation(
     return { ok: false, reason: "no larkOpenId" };
   }
 
-  const token = await getAppAccessToken();
-  if (!token) {
-    console.info("[lark/notify] skip (no Lark credentials)", {
-      to: to.name,
-      schedule: schedule.title,
-      body,
-    });
-    recordResult(false, "Lark 認証情報が未設定（.env.local）");
-    return { ok: false, reason: "no app credentials" };
-  }
-
-  const result = await postIm(token, to.larkOpenId, body);
+  const result = await postIm(to.larkOpenId, body);
   if (result.ok) {
     console.info("[lark/notify] delivered", {
       to: to.name,
@@ -167,34 +184,111 @@ export async function sendInvitation(
   return result;
 }
 
-function buildDailyReportBody(report: DailyReport, userName: string): string {
+export async function sendScheduleChanged(
+  to: CalendarUser,
+  before: Schedule,
+  after: Schedule,
+  fromName?: string,
+): Promise<NotifyResult> {
+  const body = buildScheduleChangedBody(before, after, fromName);
+  const recordResult = (delivered: boolean, reason?: string) => {
+    logEntry({
+      at: new Date().toISOString(),
+      to: { id: to.id, name: to.name },
+      scheduleId: after.id,
+      title: after.title,
+      delivered,
+      reason,
+      kind: "schedule_changed",
+    });
+  };
+
+  if (!to.larkOpenId) {
+    recordResult(false, "Lark openId 未登録（社員マスタで設定）");
+    return { ok: false, reason: "no larkOpenId" };
+  }
+
+  const result = await postIm(to.larkOpenId, body);
+  if (result.ok) {
+    recordResult(true);
+  } else {
+    recordResult(false, result.reason);
+  }
+  return result;
+}
+
+function buildDailyReportBody(
+  report: DailyReport,
+  reportUserName: string,
+  reportUrl?: string,
+): string {
   const date = format(new Date(`${report.reportDate}T00:00`), "yyyy/MM/dd(EEE)", {
     locale: ja,
   });
   return [
-    `【日報提出】${userName} さん`,
+    `【日報提出】${reportUserName} さん`,
     `対象日：${date}`,
+    reportUrl ? `確認URL：${reportUrl}` : null,
     "",
     report.body,
-  ].join("\n");
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
+}
+
+function buildDailyReportCard(
+  report: DailyReport,
+  reportUserName: string,
+  reportUrl: string,
+) {
+  const date = format(new Date(`${report.reportDate}T00:00`), "yyyy/MM/dd(EEE)", {
+    locale: ja,
+  });
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      title: { tag: "plain_text", content: "日報が提出されました" },
+    },
+    elements: [
+      {
+        tag: "div",
+        text: {
+          tag: "lark_md",
+          content: `**${reportUserName} さん**\n対象日：${date}`,
+        },
+      },
+      {
+        tag: "action",
+        actions: [
+          {
+            tag: "button",
+            text: { tag: "plain_text", content: "日報を確認する" },
+            url: reportUrl,
+            type: "primary",
+          },
+        ],
+      },
+    ],
+  };
 }
 
 /**
  * 日報提出時の Lark 通知。
- * 現状の宛先は「提出した本人の Lark DM」。
- * 上司やチーム共有チャットへの通知は、calendar-settings に通知先チャットID を追加する次フェーズで対応。
+ * 呼び出し側で管理者宛を優先し、評価環境では本人宛にフォールバックする。
  */
 export async function sendDailyReportSubmitted(
   to: CalendarUser,
   report: DailyReport,
+  reportUserName: string,
+  reportUrl?: string,
 ): Promise<NotifyResult> {
-  const body = buildDailyReportBody(report, to.name);
+  const body = buildDailyReportBody(report, reportUserName, reportUrl);
   const recordResult = (delivered: boolean, reason?: string) => {
     logEntry({
       at: new Date().toISOString(),
       to: { id: to.id, name: to.name },
       scheduleId: report.id,
-      title: `日報 ${report.reportDate}`,
+      title: `日報 ${report.reportDate} ${reportUserName}`,
       delivered,
       reason,
       kind: "daily_report",
@@ -210,19 +304,15 @@ export async function sendDailyReportSubmitted(
     return { ok: false, reason: "no larkOpenId" };
   }
 
-  const token = await getAppAccessToken();
-  if (!token) {
-    console.info("[lark/notify] daily-report skip (no Lark credentials)", {
-      to: to.name,
-      report: report.reportDate,
-      body,
-    });
-    recordResult(false, "Lark 認証情報が未設定（.env.local）");
-    return { ok: false, reason: "no app credentials" };
-  }
-
-  const result = await postIm(token, to.larkOpenId, body);
-  if (result.ok) {
+  const result = reportUrl
+    ? await postInteractiveCard(
+        to.larkOpenId,
+        buildDailyReportCard(report, reportUserName, reportUrl),
+      )
+    : await postIm(to.larkOpenId, body);
+  const delivered =
+    result.ok || !reportUrl ? result : await postIm(to.larkOpenId, body);
+  if (delivered.ok) {
     console.info("[lark/notify] daily-report delivered", {
       to: to.name,
       report: report.reportDate,
@@ -231,11 +321,11 @@ export async function sendDailyReportSubmitted(
   } else {
     console.warn("[lark/notify] daily-report failed", {
       to: to.name,
-      reason: result.reason,
+      reason: delivered.reason,
     });
-    recordResult(false, result.reason);
+    recordResult(false, delivered.reason);
   }
-  return result;
+  return delivered;
 }
 
 function buildDailyReportReplyBody(
@@ -289,18 +379,7 @@ export async function sendDailyReportReply(
     return { ok: false, reason: "no larkOpenId" };
   }
 
-  const token = await getAppAccessToken();
-  if (!token) {
-    console.info("[lark/notify] daily-report-reply skip (no Lark credentials)", {
-      to: to.name,
-      report: report.reportDate,
-      body,
-    });
-    recordResult(false, "Lark 認証情報が未設定（.env.local）");
-    return { ok: false, reason: "no app credentials" };
-  }
-
-  const result = await postIm(token, to.larkOpenId, body);
+  const result = await postIm(to.larkOpenId, body);
   if (result.ok) {
     console.info("[lark/notify] daily-report-reply delivered", {
       to: to.name,

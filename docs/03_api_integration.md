@@ -63,12 +63,49 @@
 </Link>
 ```
 
-## 4. 実働時間の連携（Phase 2以降）
+## 4. 作業時間（実施時間）の連携
 
-予定を「完了」ステータスに変更した際、入力された実働時間（`actual_minutes`）を案件ごとの稼働時間として集計します。
+予定を「完了」ステータスに変更した際、確定された作業時間（実施時間）を案件ごとの稼働時間として集計します。
+
+当初予定の `start_at` / `end_at` は上書きしません。完了時に `actual_start_at` / `actual_end_at` / `actual_minutes` / `actual_memo` を保存し、「予定 13:30〜17:00／作業時間（実施時間）13:30〜17:30」のように両方を残します。
 
 ### 実装手順
 
-1. 予定のステータス更新時に、`actual_minutes` が入力されているか確認する。
-2. 入力されている場合、`project_schedule_logs` テーブルにレコードを INSERT または UPDATE する。
-3. `kanri-system` 側で、この `project_schedule_logs` を集計して案件の採算管理に利用する。
+1. カレンダー上の「完了」から作業終了時刻を確認・修正する。
+2. `actual_minutes` を算出し、`actual_memo` と合わせて保存する。
+3. `project_schedule_logs` テーブルにレコードを INSERT または UPDATE する。
+4. `kanri-system` 側で、この `project_schedule_logs` を集計して案件の採算管理に利用する。
+
+## 5. Lark OAuth・会議URL連携
+
+LarkはG-DX予定の正本ではなく、OAuthログイン、ユーザー情報取得、会議URL発行、通知に限定して利用します。
+
+### 5.1 OAuthログイン
+
+- `/api/auth/lark/start` で state Cookie と next Cookie を発行し、Lark認可画面へリダイレクトします。
+- `/api/auth/lark/callback` で state を照合し、`authen/v1/access_token` と `authen/v1/user_info` を使ってユーザーを確認します。
+- 既存 `users` はメールまたは `calendar_user_profiles.lark_open_id` で突合します。未登録ユーザーは自動作成しません。
+- セッションCookieにはランダムトークンのみを保存し、`calendar_user_sessions.token_hash` にハッシュを保存します。
+
+### 5.2 会議URL発行
+
+オンライン予定では次のAPIを使って、Lark会議URLを発行します。
+
+```http
+POST /api/calendar/meeting-url/lark
+```
+
+```json
+{
+  "title": "オンライン予定",
+  "startAt": "2026-06-26T13:30:00.000+09:00",
+  "endAt": "2026-06-26T14:30:00.000+09:00",
+  "mainAssigneeId": "user-id"
+}
+```
+
+レスポンスの `larkEventId` は `schedules.lark_event_id` に保存し、Larkイベントの二重作成を避けます。担当者本人の user access token がない場合は再ログインを求めます。
+
+### 5.3 カレンダー同期
+
+`/api/lark/calendar/sync` は本番環境では `LARK_SYNC_SECRET` を必須にします。開発環境のみ、secret未設定でもローカル確認を許可します。

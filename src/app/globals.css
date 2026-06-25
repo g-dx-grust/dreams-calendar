@@ -24,6 +24,7 @@
   --color-primary-hover: #4e83ff;
   --color-primary-active: #245bdb;
   --color-primary-soft: #e7f0ff;
+  --color-primary-tint: #f7faff;
 
   --color-success: #34c724;
   --color-warning: #ff8800;
@@ -57,6 +58,7 @@
   --color-primary-hover: var(--color-primary-hover);
   --color-primary-active: var(--color-primary-active);
   --color-primary-soft: var(--color-primary-soft);
+  --color-primary-tint: var(--color-primary-tint);
   --color-success: var(--color-success);
   --color-warning: var(--color-warning);
   --color-danger: var(--color-danger);

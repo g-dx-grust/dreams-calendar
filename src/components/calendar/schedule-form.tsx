@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Plus, X } from "lucide-react";
+import { Plus, Video, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -47,6 +47,9 @@ const formSchema = z
     actualStartAt: z.string().optional().or(z.literal("")),
     actualEndAt: z.string().optional().or(z.literal("")),
     actualMinutes: z.string().optional().or(z.literal("")),
+    actualMemo: z.string().max(2000).optional().or(z.literal("")),
+    onlineMeetingUrl: z.string().url("会議URLが不正です").optional().or(z.literal("")),
+    larkEventId: z.string().max(200).optional().or(z.literal("")),
   })
   .superRefine((v, ctx) => {
     if (v.isAllDay) {
@@ -93,7 +96,7 @@ const formSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["actualEndAt"],
-        message: "実績開始と実績終了はセットで入力してください",
+        message: "作業開始と作業終了はセットで入力してください",
       });
     }
     if (
@@ -104,7 +107,7 @@ const formSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["actualEndAt"],
-        message: "実績終了は実績開始より後に設定してください",
+        message: "作業終了は作業開始より後に設定してください",
       });
     }
 
@@ -119,14 +122,14 @@ const formSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["actualMinutes"],
-        message: "実績時間は1〜1440分で入力してください",
+        message: "作業時間は1〜1440分で入力してください",
       });
     }
     if (v.status === "done" && !v.actualMinutes && !hasActualStart) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["actualMinutes"],
-        message: "完了にする場合は実績時間を入力してください",
+        message: "完了にする場合は作業時間（実施時間）を入力してください",
       });
     }
   });
@@ -209,21 +212,37 @@ export function ScheduleForm({
       actualStartAt: "",
       actualEndAt: "",
       actualMinutes: "",
+      actualMemo: "",
+      onlineMeetingUrl: "",
+      larkEventId: "",
       ...defaultValues,
     },
   });
 
   const watchedUserIds = watch("userIds") ?? [];
   const isAllDay = watch("isAllDay") ?? false;
+  const title = watch("title") ?? "";
+  const startDate = watch("startDate") ?? "";
+  const endDate = watch("endDate") ?? "";
+  const startTime = watch("startTime") ?? "";
+  const endTime = watch("endTime") ?? "";
   const caseNumber = watch("caseNumber") ?? "";
   const selectedCaseId = watch("caseId") ?? "";
   const selectedCaseName = watch("caseName") ?? "";
   const status = watch("status") ?? "planned";
+  const typeId = watch("typeId") ?? "";
+  const onlineMeetingUrl = watch("onlineMeetingUrl") ?? "";
+  const larkEventId = watch("larkEventId") ?? "";
+  const selectedType = scheduleTypes.find((item) => item.id === typeId);
+  const isOnlineType =
+    selectedType?.id === "online" || selectedType?.name === "オンライン";
   const caseNumberField = register("caseNumber");
   const [caseOptions, setCaseOptions] = useState<CaseOption[]>([]);
   const [isCaseSearching, setIsCaseSearching] = useState(false);
   const [caseSearchError, setCaseSearchError] = useState<string | null>(null);
   const [isCaseSuggestOpen, setIsCaseSuggestOpen] = useState(false);
+  const [meetingError, setMeetingError] = useState<string | null>(null);
+  const [isMeetingGenerating, setIsMeetingGenerating] = useState(false);
   const initialSet = new Set(initialUserIds ?? []);
   // 通知対象 = 現在選択されているが、初期に含まれず、かつ自分でないユーザー
   const inviteCandidates = watchedUserIds.filter(
@@ -281,6 +300,13 @@ export function ScheduleForm({
     };
   }, [caseNumber]);
 
+  useEffect(() => {
+    if (!isOnlineType || onlineMeetingUrl || larkEventId) return;
+    void generateLarkMeetingUrl();
+    // 初回発行だけを自動化し、入力変更時の再発行はボタン操作に寄せる。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnlineType, onlineMeetingUrl, larkEventId]);
+
   function selectCase(option: CaseOption) {
     setValue("caseId", String(option.id), {
       shouldDirty: true,
@@ -328,12 +354,72 @@ export function ScheduleForm({
       if (values.actualStartAt) fd.set("actualStartAt", values.actualStartAt);
       if (values.actualEndAt) fd.set("actualEndAt", values.actualEndAt);
       if (values.actualMinutes) fd.set("actualMinutes", values.actualMinutes);
+      if (values.actualMemo) fd.set("actualMemo", values.actualMemo);
+      if (values.onlineMeetingUrl) {
+        fd.set("onlineMeetingUrl", values.onlineMeetingUrl);
+      }
+      if (values.larkEventId) fd.set("larkEventId", values.larkEventId);
 
       const result = await action(fd);
       if (result && "ok" in result && !result.ok) {
         setServerError(result.error);
       }
     });
+  }
+
+  async function generateLarkMeetingUrl(force = false) {
+    if (isMeetingGenerating) return;
+    const mainAssigneeId = watchedUserIds[0] ?? "";
+    const startAt = toIsoFromLocal(startDate, startTime);
+    const endAt = toIsoFromLocal(isAllDay ? endDate : startDate, endTime);
+    if (!isOnlineType || isAllDay) return;
+    if (!mainAssigneeId || !startAt || !endAt) return;
+    if (!force && onlineMeetingUrl) return;
+
+    setMeetingError(null);
+    setIsMeetingGenerating(true);
+    try {
+      const response = await fetch("/api/calendar/meeting-url/lark", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title.trim() || "オンライン予定",
+          startAt,
+          endAt,
+          mainAssigneeId,
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            data?: {
+              meetingUrl?: string;
+              larkEventId?: string | null;
+            };
+            error?: string;
+          }
+        | null;
+      if (!response.ok || !payload?.data?.meetingUrl) {
+        setMeetingError(
+          payload?.error ??
+            "Lark会議URLを発行できませんでした。Larkで再ログインしてください。",
+        );
+        return;
+      }
+      setValue("onlineMeetingUrl", payload.data.meetingUrl, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      setValue("larkEventId", payload.data.larkEventId ?? "", {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    } catch {
+      setMeetingError(
+        "Lark会議URLを発行できませんでした。時間をおいて再度お試しください。",
+      );
+    } finally {
+      setIsMeetingGenerating(false);
+    }
   }
 
   return (
@@ -380,6 +466,33 @@ export function ScheduleForm({
           ))}
         </Select>
       </Field>
+
+      {isOnlineType ? (
+        <Field
+          label="会議URL"
+          hint="Larkの主カレンダーに会議予定を作成し、予定詳細に表示します。"
+          error={meetingError ?? errors.onlineMeetingUrl?.message}
+        >
+          <input type="hidden" {...register("larkEventId")} />
+          <div className="flex flex-wrap gap-2">
+            <Input
+              {...register("onlineMeetingUrl")}
+              readOnly
+              className="flex-1 min-w-[260px]"
+              placeholder={isMeetingGenerating ? "会議URLを発行中…" : ""}
+            />
+            <button
+              type="button"
+              onClick={() => void generateLarkMeetingUrl(true)}
+              disabled={isMeetingGenerating || isAllDay}
+              className="inline-flex h-9 items-center gap-1 rounded-[var(--radius-m)] border border-[var(--color-border)] bg-white px-3 text-[13px] text-[var(--color-text-strong)] hover:bg-[var(--color-background)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Video size={14} />
+              {isMeetingGenerating ? "発行中…" : "Larkで再発行する"}
+            </button>
+          </div>
+        </Field>
+      ) : null}
 
       <Field label="ステータス" required error={errors.status?.message}>
         <Select {...register("status")}>
@@ -474,22 +587,23 @@ export function ScheduleForm({
       </div>
 
       <Field
-        label="実績"
+        label="作業時間（実施時間）"
         hint={
           status === "done"
-            ? "完了にする場合は実績時間を入力してください。案件別集計に反映されます。"
-            : "完了ステータスにすると案件別の実績時間として集計されます。"
+            ? "完了にする場合は作業時間（実施時間）を入力してください。案件別集計に反映されます。"
+            : "完了ステータスにすると案件別の作業時間として集計されます。"
         }
         error={
           errors.actualStartAt?.message ||
           errors.actualEndAt?.message ||
-          errors.actualMinutes?.message
+          errors.actualMinutes?.message ||
+          errors.actualMemo?.message
         }
       >
         <div className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_120px]">
           <label className="space-y-1">
             <span className="block text-[12px] text-[var(--color-text-mid)]">
-              実績開始
+              作業開始
             </span>
             <input
               type="datetime-local"
@@ -500,7 +614,7 @@ export function ScheduleForm({
           </label>
           <label className="space-y-1">
             <span className="block text-[12px] text-[var(--color-text-mid)]">
-              実績終了
+              作業終了
             </span>
             <input
               type="datetime-local"
@@ -511,7 +625,7 @@ export function ScheduleForm({
           </label>
           <label className="space-y-1">
             <span className="block text-[12px] text-[var(--color-text-mid)]">
-              分
+              作業分
             </span>
             <input
               type="number"
@@ -525,6 +639,17 @@ export function ScheduleForm({
             />
           </label>
         </div>
+        <label className="mt-2 block space-y-1">
+          <span className="block text-[12px] text-[var(--color-text-mid)]">
+            作業メモ
+          </span>
+          <textarea
+            {...register("actualMemo")}
+            rows={3}
+            className="w-full px-3 py-2 text-[14px] bg-white text-[var(--color-text-strong)] border border-[var(--color-border)] rounded-[var(--radius-m)] placeholder:text-[var(--color-text-weak)] focus:border-[var(--color-primary)] focus:outline-none resize-y"
+            placeholder="作業時間の理由や所感を記入"
+          />
+        </label>
       </Field>
 
       <Field
@@ -716,6 +841,12 @@ const Select = ({
     {...props}
   />
 );
+
+function toIsoFromLocal(date: string, time: string) {
+  if (!date || !time) return null;
+  const parsed = new Date(`${date}T${time}`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
 
 function UserMultiSelect({
   users,

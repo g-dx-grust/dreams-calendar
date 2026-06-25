@@ -25,7 +25,7 @@ export function SelfSelector({ users, selfUserId, back }: Props) {
         name="userId"
         defaultValue={selfUserId ?? ""}
         onChange={(e) => e.currentTarget.form?.requestSubmit()}
-        className="h-7 pl-2 pr-6 text-[12px] bg-white text-[var(--color-text-strong)] border border-[var(--color-border)] rounded-[var(--radius-s)] focus:border-[var(--color-primary)] focus:outline-none"
+        className="h-9 min-w-[150px] pl-3 pr-8 text-[13px] bg-white text-[var(--color-text-strong)] border border-[var(--color-border)] rounded-[var(--radius-m)] focus:border-[var(--color-primary)] focus:outline-none"
       >
         {users.map((u) => (
           <option key={u.id} value={u.id}>

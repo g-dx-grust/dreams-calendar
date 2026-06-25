@@ -182,17 +182,30 @@ export default async function ScheduleDetailPage({
                 label="ステータス"
                 value={SCHEDULE_STATUS_LABEL[schedule.status]}
               />
-              <Row label="実績時間" value={actualMinutesLabel} />
-              <Row label="実績開始・終了" value={actualRange || "—"} />
+              <Row label="作業時間（実施時間）" value={actualMinutesLabel} />
+              <Row label="作業開始・終了" value={actualRange || "—"} />
               <Row label="Lark同期" value={syncStatusLabel} />
             </dl>
+            {schedule.onlineMeetingUrl ? (
+              <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
+                <div className="text-[12px] text-[var(--color-text-mid)] mb-1">
+                  会議URL
+                </div>
+                <Link
+                  href={schedule.onlineMeetingUrl}
+                  className="text-[13px] text-[var(--color-primary)] hover:underline break-all"
+                >
+                  {schedule.onlineMeetingUrl}
+                </Link>
+              </div>
+            ) : null}
             {calendarCaseHref ? (
               <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
                 <Link
                   href={calendarCaseHref}
                   className="text-[13px] text-[var(--color-primary)] hover:underline"
                 >
-                  案件別の予定と実績を見る
+                  案件別の予定と作業時間を見る
                 </Link>
               </div>
             ) : null}
@@ -203,6 +216,16 @@ export default async function ScheduleDetailPage({
                 </div>
                 <p className="text-[14px] whitespace-pre-wrap text-[var(--color-text-strong)]">
                   {schedule.memo}
+                </p>
+              </div>
+            ) : null}
+            {schedule.actualMemo ? (
+              <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
+                <div className="text-[12px] text-[var(--color-text-mid)] mb-1">
+                  作業メモ
+                </div>
+                <p className="text-[14px] whitespace-pre-wrap text-[var(--color-text-strong)]">
+                  {schedule.actualMemo}
                 </p>
               </div>
             ) : null}
@@ -235,6 +258,9 @@ export default async function ScheduleDetailPage({
                 actualMinutes: schedule.actualMinutes
                   ? String(schedule.actualMinutes)
                   : "",
+                actualMemo: schedule.actualMemo ?? "",
+                onlineMeetingUrl: schedule.onlineMeetingUrl ?? "",
+                larkEventId: schedule.larkEventId ?? "",
               }}
               selfUserId={selfUserId}
               initialUserIds={schedule.userIds}

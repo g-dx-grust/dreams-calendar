@@ -187,6 +187,11 @@ function ScheduleList({
                   場所：{s.location}
                 </div>
               ) : null}
+              {s.onlineMeetingUrl ? (
+                <div className="text-[12px] text-[var(--color-primary)] mt-0.5 break-all">
+                  会議URL：{s.onlineMeetingUrl}
+                </div>
+              ) : null}
             </Link>
           </li>
         );

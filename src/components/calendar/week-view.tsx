@@ -66,7 +66,7 @@ export function WeekView({ date, users, schedules, scheduleTypes }: Props) {
         >
           {/* ヘッダー行 */}
           <div
-            className="sticky top-0 left-0 z-30 bg-[var(--color-background)] border-b border-r border-[var(--color-border)] h-10 flex items-center px-3 text-[12px] text-[var(--color-text-mid)]"
+            className="sticky top-0 left-0 z-30 bg-white border-b border-r border-[var(--color-border)] h-11 flex items-center px-4 text-[13px] font-medium text-[var(--color-text-mid)]"
           >
             社員
           </div>
@@ -76,7 +76,7 @@ export function WeekView({ date, users, schedules, scheduleTypes }: Props) {
             return (
               <div
                 key={d.toISOString()}
-                className="sticky top-0 z-20 bg-[var(--color-background)] border-b border-r border-[var(--color-border)] h-10 flex items-center justify-between gap-2 px-3"
+                className="sticky top-0 z-20 bg-white border-b border-r border-[var(--color-border)] h-11 flex items-center justify-between gap-2 px-3"
               >
                 <Link
                   href={`/calendar?view=day&date=${format(d, "yyyy-MM-dd")}`}
@@ -115,7 +115,7 @@ export function WeekView({ date, users, schedules, scheduleTypes }: Props) {
                     key={key}
                     className="border-b border-r border-[var(--color-border)] p-1.5 min-h-[88px] space-y-1"
                     style={{
-                      background: today ? "rgba(51,112,255,0.04)" : "white",
+                      background: today ? "var(--color-primary-tint)" : "white",
                     }}
                   >
                     {dayItems.length === 0 ? (

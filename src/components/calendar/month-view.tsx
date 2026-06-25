@@ -12,7 +12,6 @@ import {
   isSameMonth,
   isToday,
 } from "date-fns";
-import { ja } from "date-fns/locale";
 import type { CalendarUser, Schedule, ScheduleType } from "./types";
 import { SchedulePopover } from "./schedule-popover";
 import {
@@ -65,7 +64,7 @@ export function MonthView({ date, users, schedules, scheduleTypes }: Props) {
   return (
     <div className="bg-white border border-[var(--color-border)] rounded-[var(--radius-m)] overflow-hidden">
       {/* 曜日ヘッダー */}
-      <div className="grid grid-cols-7 border-b border-[var(--color-border)] bg-[var(--color-background)]">
+      <div className="grid grid-cols-7 border-b border-[var(--color-border)] bg-white">
         {DAY_LABELS.map((d, i) => (
           <div
             key={d}
@@ -110,7 +109,7 @@ export function MonthView({ date, users, schedules, scheduleTypes }: Props) {
               className="border-b border-r border-[var(--color-border)] last-of-type:border-r min-h-[110px] p-1.5 space-y-1"
               style={{
                 background: today
-                  ? "rgba(51,112,255,0.04)"
+                  ? "var(--color-primary-tint)"
                   : inMonth
                     ? "white"
                     : "var(--color-background)",

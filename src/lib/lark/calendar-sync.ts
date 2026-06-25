@@ -1,5 +1,6 @@
 import { formatISO } from "date-fns";
 import { larkConfig } from "./config";
+import { getLarkAppAccessToken } from "./provider-client";
 import {
   createScheduleAsync,
   getScheduleAsync,
@@ -14,19 +15,6 @@ type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 type SyncResult =
   | { ok: true; scheduleId: string; larkEventId: string }
   | { ok: false; scheduleId: string; skipped?: boolean; error: string };
-
-type TokenCacheEntry = {
-  token: string;
-  expiresAt: number;
-};
-
-type LarkTokenResponse = {
-  code: number;
-  msg?: string;
-  app_access_token?: string;
-  tenant_access_token?: string;
-  expire?: number;
-};
 
 type LarkCalendarEventResponse = {
   code: number;
@@ -91,96 +79,10 @@ type PullResult = {
   }>;
 };
 
-declare global {
-  var __gdxLarkCalendarAppToken: TokenCacheEntry | undefined;
-  var __gdxLarkCalendarTenantToken: TokenCacheEntry | undefined;
-}
-
 function isConfigured() {
   return Boolean(
     larkConfig.appId && larkConfig.appSecret && larkConfig.calendarId,
   );
-}
-
-function getCachedToken(kind: "app" | "tenant") {
-  const cached =
-    kind === "app"
-      ? globalThis.__gdxLarkCalendarAppToken
-      : globalThis.__gdxLarkCalendarTenantToken;
-  if (!cached) return null;
-  return cached.expiresAt - 60_000 > Date.now() ? cached.token : null;
-}
-
-function setCachedToken(kind: "app" | "tenant", token: string, expire = 7200) {
-  const entry = {
-    token,
-    expiresAt: Date.now() + expire * 1000,
-  };
-  if (kind === "app") {
-    globalThis.__gdxLarkCalendarAppToken = entry;
-  } else {
-    globalThis.__gdxLarkCalendarTenantToken = entry;
-  }
-}
-
-async function getLarkAppAccessToken(): Promise<Result<string>> {
-  const cached = getCachedToken("app");
-  if (cached) return { ok: true, data: cached };
-  if (!larkConfig.appId || !larkConfig.appSecret) {
-    return { ok: false, error: "Lark認証情報が未設定です" };
-  }
-
-  const response = await fetch(
-    `${larkConfig.openApiBase}/auth/v3/app_access_token/internal`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        app_id: larkConfig.appId,
-        app_secret: larkConfig.appSecret,
-      }),
-      cache: "no-store",
-    },
-  );
-  if (!response.ok) {
-    return { ok: false, error: `app_access_token: HTTP ${response.status}` };
-  }
-  const json = (await response.json()) as LarkTokenResponse;
-  if (json.code !== 0 || !json.app_access_token) {
-    return { ok: false, error: json.msg ?? "app_access_token failed" };
-  }
-  setCachedToken("app", json.app_access_token, json.expire);
-  return { ok: true, data: json.app_access_token };
-}
-
-export async function getLarkTenantAccessToken(): Promise<Result<string>> {
-  const cached = getCachedToken("tenant");
-  if (cached) return { ok: true, data: cached };
-  if (!larkConfig.appId || !larkConfig.appSecret) {
-    return { ok: false, error: "Lark認証情報が未設定です" };
-  }
-
-  const response = await fetch(
-    `${larkConfig.openApiBase}/auth/v3/tenant_access_token/internal`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        app_id: larkConfig.appId,
-        app_secret: larkConfig.appSecret,
-      }),
-      cache: "no-store",
-    },
-  );
-  if (!response.ok) {
-    return { ok: false, error: `tenant_access_token: HTTP ${response.status}` };
-  }
-  const json = (await response.json()) as LarkTokenResponse;
-  if (json.code !== 0 || !json.tenant_access_token) {
-    return { ok: false, error: json.msg ?? "tenant_access_token failed" };
-  }
-  setCachedToken("tenant", json.tenant_access_token, json.expire);
-  return { ok: true, data: json.tenant_access_token };
 }
 
 function toLarkEventBody(schedule: Schedule): LarkCalendarEventBody {

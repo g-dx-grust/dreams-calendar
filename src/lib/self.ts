@@ -11,6 +11,11 @@ const COOKIE_NAME = "gdx_self_user_id";
 const MAX_AGE = 60 * 60 * 24 * 365; // 1 年
 
 export async function getCurrentUserId(): Promise<string | null> {
+  const session = await getSession();
+  if (session?.userId) {
+    return session.userId;
+  }
+
   const cookieStore = await cookies();
   const fromCookie = cookieStore.get(COOKIE_NAME)?.value;
   const users = await listUsersAsync();
@@ -19,7 +24,6 @@ export async function getCurrentUserId(): Promise<string | null> {
   }
 
   // セッションがあれば larkOpenId でマッチ（将来）
-  const session = await getSession();
   if (session?.larkOpenId) {
     const matched = users.find((u) => u.larkOpenId === session.larkOpenId);
     if (matched) return matched.id;

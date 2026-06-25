@@ -88,7 +88,7 @@ export function syncProjectScheduleLogs(schedule: Schedule): ProjectScheduleLog[
     userId,
     workDate,
     minutes,
-    memo: schedule.memo,
+    memo: schedule.actualMemo ?? schedule.memo,
     createdAt: now,
     updatedAt: now,
   }));
@@ -110,7 +110,7 @@ function buildRows(schedule: Schedule) {
     user_id: userId,
     work_date: workDate,
     minutes,
-    memo: schedule.memo ?? null,
+    memo: schedule.actualMemo ?? schedule.memo ?? null,
   }));
 }
 

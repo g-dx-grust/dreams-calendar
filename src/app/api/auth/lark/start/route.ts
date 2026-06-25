@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
   buildAuthorizeUrl,
+  LARK_OAUTH_NEXT_COOKIE,
   LARK_OAUTH_STATE_COOKIE,
   LARK_OAUTH_STATE_MAX_AGE,
   larkConfig,
@@ -19,8 +20,16 @@ export function GET(request: Request) {
   }
 
   const state = randomBytes(16).toString("hex");
-  const response = NextResponse.redirect(buildAuthorizeUrl(state));
+  const nextPath = sanitizeNextPath(new URL(request.url).searchParams.get("next"));
+  const response = NextResponse.redirect(buildAuthorizeUrl(state, origin));
   response.cookies.set(LARK_OAUTH_STATE_COOKIE, state, {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: LARK_OAUTH_STATE_MAX_AGE,
+    secure: process.env.NODE_ENV === "production",
+  });
+  response.cookies.set(LARK_OAUTH_NEXT_COOKIE, nextPath, {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
@@ -29,4 +38,10 @@ export function GET(request: Request) {
   });
 
   return response;
+}
+
+function sanitizeNextPath(value: string | null) {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return "/calendar";
+  if (value.startsWith("/api/auth/")) return "/calendar";
+  return value;
 }

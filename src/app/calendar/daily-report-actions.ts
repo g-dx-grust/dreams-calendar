@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { z } from "zod";
 import {
   getReportAsync,
@@ -40,6 +41,17 @@ function serializeReply(reply: DailyReportReply): SerializedDailyReportReply {
   };
 }
 
+async function buildDailyReportUrl(reportDate: string, userId: string) {
+  const headerStore = await headers();
+  const host =
+    headerStore.get("x-forwarded-host") ?? headerStore.get("host") ?? "";
+  if (!host) return "";
+  const protocol = headerStore.get("x-forwarded-proto") ?? "http";
+  const origin = process.env.NEXT_PUBLIC_APP_URL ?? `${protocol}://${host}`;
+  const params = new URLSearchParams({ view: "day", date: reportDate });
+  return `${origin}/calendar?${params.toString()}#daily-report-${userId}`;
+}
+
 const submitSchema = z.object({
   userId: z.string().min(1, "社員 ID が不正です"),
   reportDate: z
@@ -69,10 +81,22 @@ export async function submitDailyReportAction(
     parsed.data.body,
   );
 
-  const user = (await listUsersAsync()).find((u) => u.id === parsed.data.userId);
-  if (user) {
-    const result = await sendDailyReportSubmitted(user, report);
-    if (result.ok) {
+  const users = await listUsersAsync();
+  const reportUser = users.find((u) => u.id === parsed.data.userId);
+  const adminUsers = users.filter((u) => u.isAdmin || u.role === "admin");
+  const recipients =
+    adminUsers.length > 0 ? adminUsers : reportUser ? [reportUser] : [];
+  if (reportUser && recipients.length > 0) {
+    const url = await buildDailyReportUrl(
+      parsed.data.reportDate,
+      parsed.data.userId,
+    );
+    const results = await Promise.all(
+      recipients.map((recipient) =>
+        sendDailyReportSubmitted(recipient, report, reportUser.name, url),
+      ),
+    );
+    if (results.some((result) => result.ok)) {
       await markReportLarkNotifiedAsync(report.id);
     }
   }

@@ -2,7 +2,6 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { format } from "date-fns";
-import { ja } from "date-fns/locale";
 import {
   DndContext,
   PointerSensor,
@@ -38,8 +37,8 @@ const SLOTS_PER_HOUR = 4; // 15 分刻み
 const SLOT_WIDTH_PX = HOUR_WIDTH_PX / SLOTS_PER_HOUR;
 const SNAP_MIN = 60 / SLOTS_PER_HOUR; // 15
 const MIN_DURATION_MIN = 15;
-const HEADER_ROW_HEIGHT_PX = 32;
-const USER_ROW_HEIGHT_PX = 56;
+const HEADER_ROW_HEIGHT_PX = 48;
+const USER_ROW_HEIGHT_PX = 86;
 
 type Props = {
   date: Date;
@@ -50,6 +49,8 @@ type Props = {
   endHour: number;
   reportDate: string; // YYYY-MM-DD
   reportsByUserId: Record<string, DailyReport | null>;
+  currentUserId: string | null;
+  canViewAllReports: boolean;
 };
 
 function makeMinutesFromStart(startHour: number) {
@@ -69,6 +70,8 @@ export function DayView({
   endHour,
   reportDate,
   reportsByUserId,
+  currentUserId,
+  canViewAllReports,
 }: Props) {
   const resetKey = [
     reportDate,
@@ -77,6 +80,10 @@ export function DayView({
         s.id,
         s.startAt.getTime(),
         s.endAt.getTime(),
+        s.status,
+        s.actualEndAt?.getTime() ?? 0,
+        s.actualMinutes ?? 0,
+        s.actualMemo ?? "",
         s.userIds.join(","),
       ].join(":"),
     ),
@@ -93,12 +100,13 @@ export function DayView({
       endHour={endHour}
       reportDate={reportDate}
       reportsByUserId={reportsByUserId}
+      currentUserId={currentUserId}
+      canViewAllReports={canViewAllReports}
     />
   );
 }
 
 function DayViewContent({
-  date,
   users,
   schedules,
   scheduleTypes,
@@ -106,6 +114,8 @@ function DayViewContent({
   endHour,
   reportDate,
   reportsByUserId,
+  currentUserId,
+  canViewAllReports,
 }: Props) {
   const totalHours = endHour - startHour;
   const totalSlots = totalHours * SLOTS_PER_HOUR;
@@ -246,13 +256,6 @@ function DayViewContent({
 
   return (
     <div className="bg-white border border-[var(--color-border)] rounded-[var(--radius-m)] overflow-hidden">
-      {/* 日付ヘッダー */}
-      <div className="px-4 py-3 border-b border-[var(--color-border)]">
-        <h2 className="text-[16px] font-bold text-[var(--color-text-strong)]">
-          {format(date, "yyyy年M月d日(EEE)", { locale: ja })}
-        </h2>
-      </div>
-
       {/* グリッド本体（横スクロール） */}
       <DndContext
         id="calendar-day-view-dnd"
@@ -266,17 +269,17 @@ function DayViewContent({
           >
             {/* ヘッダー：左上空セル + 日報 + 時間目盛 */}
             <div
-              className="flex sticky top-0 z-30 bg-[var(--color-background)] border-b border-[var(--color-border)]"
+              className="flex sticky top-0 z-30 bg-white border-b border-[var(--color-border)]"
               style={{ height: HEADER_ROW_HEIGHT_PX }}
             >
               <div
-                className="sticky left-0 z-40 bg-[var(--color-background)] border-r border-[var(--color-border)] flex items-center px-3 text-[12px] text-[var(--color-text-mid)]"
+                className="sticky left-0 z-40 bg-white border-r border-[var(--color-border)] flex items-center px-5 text-[13px] font-medium text-[var(--color-text-mid)]"
                 style={{ width: USER_COL_PX, minWidth: USER_COL_PX }}
               >
                 社員
               </div>
               <div
-                className="sticky z-40 bg-[var(--color-background)] border-r border-[var(--color-border)] flex items-center px-3 text-[12px] text-[var(--color-text-mid)]"
+                className="sticky z-40 bg-white border-r border-[var(--color-border)] flex items-center px-3 text-[13px] font-medium text-[var(--color-text-mid)]"
                 style={{
                   width: REPORT_COL_PX,
                   minWidth: REPORT_COL_PX,
@@ -297,7 +300,7 @@ function DayViewContent({
                   return (
                     <div
                       key={hour}
-                      className="absolute top-0 bottom-0 flex items-center text-[11px] text-[var(--color-text-weak)] px-1"
+                      className="absolute top-0 bottom-0 flex items-center px-1 text-[13px] font-medium text-[var(--color-text-mid)]"
                       style={{
                         left: i * HOUR_WIDTH_PX,
                         borderLeft:
@@ -326,6 +329,7 @@ function DayViewContent({
                 timelineWidthPx={timelineWidthPx}
                 reportDate={reportDate}
                 report={reportsByUserId[u.id] ?? null}
+                canOpenReport={canViewAllReports || u.id === currentUserId}
                 onScheduleClick={handleScheduleClick}
                 onResize={handleResize}
               />
@@ -362,6 +366,7 @@ function DayViewContent({
               .filter((u): u is CalendarUser => Boolean(u));
             return (
               <SchedulePopover
+                key={target.id}
                 schedule={target}
                 type={typeMap.get(target.typeId)}
                 assignees={assignees}
@@ -385,6 +390,7 @@ function UserRow({
   timelineWidthPx,
   reportDate,
   report,
+  canOpenReport,
   onScheduleClick,
   onResize,
 }: {
@@ -397,11 +403,15 @@ function UserRow({
   timelineWidthPx: number;
   reportDate: string;
   report: DailyReport | null;
+  canOpenReport: boolean;
   onScheduleClick: (id: string, target: HTMLElement) => void;
   onResize: (id: string, newStart: Date, newEnd: Date) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `user-${user.id}` });
-  const dailyReportDraft = buildDailyReportDraft(schedules);
+  const completedSchedules = schedules.filter(
+    (schedule) => schedule.status === "done",
+  );
+  const dailyReportDraft = buildDailyReportDraft(completedSchedules);
 
   return (
     <div
@@ -410,7 +420,7 @@ function UserRow({
     >
       {/* 左：社員名（固定） */}
       <div
-        className="sticky left-0 z-20 bg-white border-r border-[var(--color-border)] flex items-center px-3 text-[13px] font-medium text-[var(--color-text-strong)]"
+        className="sticky left-0 z-20 bg-white border-r border-[var(--color-border)] flex items-center px-5 text-[14px] font-bold text-[var(--color-text-strong)]"
         style={{ width: USER_COL_PX, minWidth: USER_COL_PX }}
       >
         {user.name}
@@ -425,13 +435,20 @@ function UserRow({
           left: USER_COL_PX,
         }}
       >
-        <DailyReportCell
-          userId={user.id}
-          userName={user.name}
-          reportDate={reportDate}
-          initialReport={report}
-          autoDraft={dailyReportDraft}
-        />
+        {canOpenReport ? (
+          <DailyReportCell
+            userId={user.id}
+            userName={user.name}
+            reportDate={reportDate}
+            initialReport={report}
+            autoDraft={dailyReportDraft}
+            completedSchedules={completedSchedules}
+          />
+        ) : (
+          <span className="text-[12px] text-[var(--color-text-disabled)]">
+            —
+          </span>
+        )}
       </div>
 
       {/* 右：タイムライン（Droppable） */}
@@ -475,9 +492,9 @@ function UserRow({
 }
 
 function buildDailyReportDraft(schedules: Schedule[]): string | undefined {
-  const doneSchedules = schedules
-    .filter((schedule) => schedule.status === "done")
-    .sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
+  const doneSchedules = schedules.sort(
+    (a, b) => a.startAt.getTime() - b.startAt.getTime(),
+  );
 
   if (doneSchedules.length === 0) return undefined;
 
@@ -487,7 +504,9 @@ function buildDailyReportDraft(schedules: Schedule[]): string | undefined {
       const actualPart = schedule.actualMinutes
         ? ` ${formatWorkMinutes(schedule.actualMinutes)}`
         : "";
-      return `・${format(schedule.startAt, "HH:mm")}〜${format(schedule.endAt, "HH:mm")} ${schedule.title}${casePart}${actualPart}`;
+      const memoPart = schedule.actualMemo ? `\n  作業メモ：${schedule.actualMemo}` : "";
+      const actualEnd = schedule.actualEndAt ?? schedule.endAt;
+      return `・${format(schedule.startAt, "HH:mm")}〜${format(actualEnd, "HH:mm")} ${schedule.title}${casePart}${actualPart}${memoPart}`;
     })
     .join("\n");
 }
@@ -667,7 +686,7 @@ function DraggableScheduleBlock({
   const endLabel = fmtMin(endMin);
 
   const blockClass =
-    "absolute top-1 bottom-1 text-[12px] leading-tight overflow-hidden rounded-[var(--radius-s)] select-none group " +
+    "absolute top-2 bottom-2 text-[13px] leading-tight overflow-hidden rounded-[var(--radius-s)] select-none group " +
     (isCoAssignee
       ? "border border-dashed border-white/70 ring-1 ring-black/10"
       : "border border-black/10");
@@ -708,7 +727,7 @@ function DraggableScheduleBlock({
           </span>
           {schedule.userIds.length > 1 ? (
             <span
-              className="shrink-0 text-[10px] px-1 py-0 rounded-[2px] bg-black/30"
+              className="shrink-0 text-[10px] px-1 py-0 rounded-[var(--radius-s)] bg-black/30"
               title={`担当者 ${schedule.userIds.length} 名`}
             >
               +{schedule.userIds.length - 1}

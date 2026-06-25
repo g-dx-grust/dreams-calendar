@@ -12,6 +12,7 @@ export const SCHEDULE_TYPES: ScheduleType[] = [
   { id: "application", name: "申請", color: "chart-9" },
   { id: "guest", name: "来客", color: "chart-3" },
   { id: "transit", name: "移動", color: "neutral" },
+  { id: "online", name: "オンライン", color: "main" },
 ];
 
 export const MOCK_USERS: CalendarUser[] = [
@@ -266,4 +267,5 @@ export const MOCK_SCHEDULES: Schedule[] = RAW_SCHEDULES.map((s) => ({
   actualMinutes: DONE_IDS.has(s.id)
     ? Math.max(15, Math.round((s.endAt.getTime() - s.startAt.getTime()) / 60000))
     : undefined,
+  actualMemo: DONE_IDS.has(s.id) ? "予定どおり完了" : undefined,
 }));

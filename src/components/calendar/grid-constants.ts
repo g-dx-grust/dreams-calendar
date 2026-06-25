@@ -6,5 +6,5 @@
  */
 
 export const HOUR_WIDTH_PX = 96; // 1 時間 = 96px
-export const USER_COL_PX = 119;
-export const REPORT_COL_PX = 80;
+export const USER_COL_PX = 140;
+export const REPORT_COL_PX = 100;

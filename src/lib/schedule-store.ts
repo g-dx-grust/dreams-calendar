@@ -55,6 +55,8 @@ type ScheduleRow = {
   actual_start_at: string | null;
   actual_end_at: string | null;
   actual_minutes: number | null;
+  actual_memo: string | null;
+  online_meeting_url: string | null;
   lark_event_id: string | null;
   sync_source: CalendarSyncSource;
   sync_status: CalendarSyncStatus;
@@ -62,6 +64,9 @@ type ScheduleRow = {
   last_synced_at: string | null;
   cases?: { case_name: string | null } | { case_name: string | null }[] | null;
 };
+
+const SCHEDULE_SELECT =
+  "id,title,start_at,end_at,user_id,co_user_ids,case_id,case_number,schedule_type_id,location,memo,status,actual_start_at,actual_end_at,actual_minutes,actual_memo,online_meeting_url,lark_event_id,sync_source,sync_status,sync_error,last_synced_at,cases(case_name)";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -134,6 +139,8 @@ function hydrateRow(row: ScheduleRow): Schedule {
       : undefined,
     actualEndAt: row.actual_end_at ? new Date(row.actual_end_at) : undefined,
     actualMinutes: row.actual_minutes ?? undefined,
+    actualMemo: row.actual_memo ?? undefined,
+    onlineMeetingUrl: row.online_meeting_url ?? undefined,
     larkEventId: row.lark_event_id ?? undefined,
     syncSource: row.sync_source ?? "app",
     syncStatus: row.sync_status ?? "pending",
@@ -156,9 +163,7 @@ export async function listSchedulesAsync(): Promise<Schedule[]> {
 
   const { data, error } = await db
     .from("schedules")
-    .select(
-      "id,title,start_at,end_at,user_id,co_user_ids,case_id,case_number,schedule_type_id,location,memo,status,actual_start_at,actual_end_at,actual_minutes,lark_event_id,sync_source,sync_status,sync_error,last_synced_at,cases(case_name)",
-    )
+    .select(SCHEDULE_SELECT)
     .is("deleted_at", null)
     .order("start_at", { ascending: true });
 
@@ -177,9 +182,7 @@ export async function getScheduleAsync(id: string): Promise<Schedule | null> {
 
   const { data, error } = await db
     .from("schedules")
-    .select(
-      "id,title,start_at,end_at,user_id,co_user_ids,case_id,case_number,schedule_type_id,location,memo,status,actual_start_at,actual_end_at,actual_minutes,lark_event_id,sync_source,sync_status,sync_error,last_synced_at,cases(case_name)",
-    )
+    .select(SCHEDULE_SELECT)
     .eq("id", id)
     .is("deleted_at", null)
     .maybeSingle();
@@ -213,6 +216,8 @@ export type ScheduleInput = {
   actualStartAt?: Date | null;
   actualEndAt?: Date | null;
   actualMinutes?: number | null;
+  actualMemo?: string | null;
+  onlineMeetingUrl?: string | null;
   typeId: string;
   caseId?: number;
   caseNumber?: string;
@@ -260,6 +265,8 @@ export function createSchedule(input: ScheduleInput): Schedule {
     actualStartAt: input.actualStartAt?.toISOString(),
     actualEndAt: input.actualEndAt?.toISOString(),
     actualMinutes: input.actualMinutes ?? undefined,
+    actualMemo: input.actualMemo ?? undefined,
+    onlineMeetingUrl: input.onlineMeetingUrl ?? undefined,
     startAt: input.startAt.toISOString(),
     endAt: input.endAt.toISOString(),
   };
@@ -282,6 +289,8 @@ function buildSchedulePayload(input: ScheduleInput) {
     actual_start_at: input.actualStartAt?.toISOString() ?? null,
     actual_end_at: input.actualEndAt?.toISOString() ?? null,
     actual_minutes: input.actualMinutes ?? null,
+    actual_memo: input.actualMemo ?? null,
+    online_meeting_url: input.onlineMeetingUrl ?? null,
     lark_event_id: input.larkEventId ?? null,
     sync_source: input.syncSource ?? "app",
     sync_status: input.syncStatus ?? "pending",
@@ -301,9 +310,7 @@ export async function createScheduleAsync(
   const { data, error } = await db
     .from("schedules")
     .insert(buildSchedulePayload(input))
-    .select(
-      "id,title,start_at,end_at,user_id,co_user_ids,case_id,case_number,schedule_type_id,location,memo,status,actual_start_at,actual_end_at,actual_minutes,lark_event_id,sync_source,sync_status,sync_error,last_synced_at,cases(case_name)",
-    )
+    .select(SCHEDULE_SELECT)
     .single();
 
   if (error || !data) return createSchedule(input);
@@ -360,6 +367,12 @@ export function updateSchedule(
     ...(patch.actualMinutes !== undefined
       ? { actualMinutes: patch.actualMinutes || undefined }
       : {}),
+    ...(patch.actualMemo !== undefined
+      ? { actualMemo: patch.actualMemo || undefined }
+      : {}),
+    ...(patch.onlineMeetingUrl !== undefined
+      ? { onlineMeetingUrl: patch.onlineMeetingUrl || undefined }
+      : {}),
     ...(patch.startAt ? { startAt: patch.startAt.toISOString() } : {}),
     ...(patch.endAt ? { endAt: patch.endAt.toISOString() } : {}),
   };
@@ -392,6 +405,12 @@ function buildSchedulePatch(patch: Partial<ScheduleInput>) {
   if (patch.actualMinutes !== undefined) {
     payload.actual_minutes = patch.actualMinutes ?? null;
   }
+  if (patch.actualMemo !== undefined) {
+    payload.actual_memo = patch.actualMemo || null;
+  }
+  if (patch.onlineMeetingUrl !== undefined) {
+    payload.online_meeting_url = patch.onlineMeetingUrl || null;
+  }
   if (patch.larkEventId !== undefined) {
     payload.lark_event_id = patch.larkEventId || null;
   }
@@ -418,9 +437,7 @@ export async function updateScheduleAsync(
     .update(buildSchedulePatch(patch))
     .eq("id", id)
     .is("deleted_at", null)
-    .select(
-      "id,title,start_at,end_at,user_id,co_user_ids,case_id,case_number,schedule_type_id,location,memo,status,actual_start_at,actual_end_at,actual_minutes,lark_event_id,sync_source,sync_status,sync_error,last_synced_at,cases(case_name)",
-    )
+    .select(SCHEDULE_SELECT)
     .maybeSingle();
 
   if (error) return updateSchedule(id, patch);

@@ -4,7 +4,8 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, FileText } from "lucide-react";
 import { submitDailyReportAction } from "@/app/calendar/daily-report-actions";
-import type { DailyReport } from "./types";
+import { CompletedScheduleSummary } from "./completed-schedule-summary";
+import type { DailyReport, Schedule } from "./types";
 
 type Props = {
   userId: string;
@@ -12,6 +13,8 @@ type Props = {
   reportDate: string; // YYYY-MM-DD
   initialReport: DailyReport | null;
   autoDraft?: string;
+  completedSchedules: Schedule[];
+  buttonLabel?: string;
 };
 
 export function DailyReportCell({
@@ -20,6 +23,8 @@ export function DailyReportCell({
   reportDate,
   initialReport,
   autoDraft,
+  completedSchedules,
+  buttonLabel,
 }: Props) {
   const resetKey = [
     userId,
@@ -28,6 +33,14 @@ export function DailyReportCell({
     initialReport?.updatedAt.getTime() ?? 0,
     initialReport?.body ?? "",
     autoDraft ?? "",
+    ...completedSchedules.map((schedule) =>
+      [
+        schedule.id,
+        schedule.actualEndAt?.getTime() ?? 0,
+        schedule.actualMinutes ?? 0,
+        schedule.actualMemo ?? "",
+      ].join(":"),
+    ),
   ].join(":");
 
   return (
@@ -38,6 +51,8 @@ export function DailyReportCell({
       reportDate={reportDate}
       initialReport={initialReport}
       autoDraft={autoDraft}
+      completedSchedules={completedSchedules}
+      buttonLabel={buttonLabel}
     />
   );
 }
@@ -48,6 +63,8 @@ function DailyReportCellContent({
   reportDate,
   initialReport,
   autoDraft,
+  completedSchedules,
+  buttonLabel,
 }: Props) {
   const router = useRouter();
   const dialogRef = useRef<HTMLDialogElement | null>(null);
@@ -107,7 +124,7 @@ function DailyReportCellContent({
         }
       >
         {submitted ? <Check size={14} /> : <FileText size={14} />}
-        <span>日報</span>
+        <span>{buttonLabel ?? "日報"}</span>
       </button>
 
       <dialog
@@ -138,6 +155,15 @@ function DailyReportCellContent({
           </div>
 
           <div className="px-5 py-4 overflow-auto">
+            <div className="mb-4">
+              <p className="mb-1.5 text-[13px] font-medium text-[var(--color-text-strong)]">
+                完了した予定
+              </p>
+              <CompletedScheduleSummary
+                schedules={completedSchedules}
+                emptyLabel="完了した予定はまだありません。"
+              />
+            </div>
             <div className="mb-1.5 flex items-center justify-between gap-2">
               <label className="block text-[13px] text-[var(--color-text-strong)]">
                 本文

@@ -58,7 +58,7 @@ export function CalendarUserFilter({ users, visibleUserIds }: Props) {
         visible.map((u) => (
           <span
             key={u.id}
-            className="inline-flex items-center gap-1 pl-3 pr-1 py-1 text-[13px] rounded-[var(--radius-s)] bg-white border border-[var(--color-border)]"
+            className="inline-flex h-9 items-center gap-1 rounded-[var(--radius-s)] border border-[var(--color-border)] bg-white pl-4 pr-1 text-[13px] font-medium text-[var(--color-text-strong)]"
           >
             {u.name}
             <button
@@ -80,7 +80,7 @@ export function CalendarUserFilter({ users, visibleUserIds }: Props) {
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
-            className="inline-flex items-center gap-1 px-3 py-1 text-[13px] rounded-[var(--radius-s)] bg-white border border-dashed border-[var(--color-border)] text-[var(--color-text-mid)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)]"
+            className="inline-flex h-9 items-center gap-1 rounded-[var(--radius-s)] border border-dashed border-[var(--color-border)] bg-white px-3 text-[13px] text-[var(--color-text-mid)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
           >
             <Plus size={14} />
             社員を表示
@@ -89,13 +89,14 @@ export function CalendarUserFilter({ users, visibleUserIds }: Props) {
           {open ? (
             <div
               role="listbox"
-              className="absolute top-full left-0 mt-1 max-h-64 overflow-auto bg-white border border-[var(--color-border)] rounded-[var(--radius-s)] shadow-md z-50 min-w-[180px]"
+              className="absolute top-full left-0 z-50 mt-1 max-h-64 min-w-[180px] overflow-auto rounded-[var(--radius-s)] border border-[var(--color-border)] bg-white"
             >
               {candidates.map((u) => (
                 <button
                   key={u.id}
                   type="button"
                   role="option"
+                  aria-selected={false}
                   onClick={() => {
                     send("add", u.id);
                     setOpen(false);

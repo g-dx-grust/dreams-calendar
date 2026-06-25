@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { exchangeCode, fetchUserInfo, pickAvatar } from "@/lib/lark/client";
-import { LARK_OAUTH_STATE_COOKIE } from "@/lib/lark/config";
-import { setSession, userInfoToSession } from "@/lib/session";
+import { exchangeCode, fetchUserInfo } from "@/lib/lark/client";
+import {
+  LARK_OAUTH_NEXT_COOKIE,
+  LARK_OAUTH_STATE_COOKIE,
+} from "@/lib/lark/config";
+import {
+  createDatabaseSession,
+  resolveAuthenticatedLarkUser,
+} from "@/lib/session";
+import { setCurrentUserId } from "@/lib/self";
 
 export const dynamic = "force-dynamic";
 
@@ -13,29 +20,49 @@ export async function GET(request: Request) {
 
   const cookieStore = await cookies();
   const expectedState = cookieStore.get(LARK_OAUTH_STATE_COOKIE)?.value;
+  const nextPath = sanitizeNextPath(
+    cookieStore.get(LARK_OAUTH_NEXT_COOKIE)?.value ?? null,
+  );
   cookieStore.delete(LARK_OAUTH_STATE_COOKIE);
+  cookieStore.delete(LARK_OAUTH_NEXT_COOKIE);
 
   if (!code || !state || !expectedState || state !== expectedState) {
     return redirectWithError(url.origin, "invalid_state");
   }
 
   const tokenResult = await exchangeCode(code);
-  if (!tokenResult.ok) return redirectWithError(url.origin, tokenResult.error);
+  if (!tokenResult.ok) return redirectWithError(url.origin, "lark_token_failed");
 
   const userResult = await fetchUserInfo(tokenResult.data.access_token);
-  if (!userResult.ok) return redirectWithError(url.origin, userResult.error);
+  if (!userResult.ok) return redirectWithError(url.origin, "lark_user_failed");
 
-  const avatar = pickAvatar(userResult.data);
-  await setSession(userInfoToSession(userResult.data, avatar));
+  const resolved = await resolveAuthenticatedLarkUser(userResult.data);
+  if (!resolved.ok) return redirectWithError(url.origin, "user_not_allowed");
 
-  // B-2/③ で対応：Lark email を kanri の users と突合し「自分」を確定。
-  // avatar_url・larkOpenId は共有 users ではなく本システム固有テーブル
-  // （user_profiles 想定）にキャッシュする（CLAUDE.md §D：共有 users は参照のみ）。
-  return NextResponse.redirect(`${url.origin}/calendar`);
+  try {
+    await createDatabaseSession({
+      userId: resolved.user.id,
+      userInfo: userResult.data,
+      larkAccessToken: tokenResult.data.access_token,
+      larkRefreshToken: tokenResult.data.refresh_token,
+      larkExpiresIn: tokenResult.data.expires_in,
+    });
+    await setCurrentUserId(resolved.user.id);
+  } catch {
+    return redirectWithError(url.origin, "session_failed");
+  }
+
+  return NextResponse.redirect(new URL(nextPath, url.origin));
 }
 
 function redirectWithError(origin: string, message: string) {
   const target = new URL("/login", origin);
   target.searchParams.set("error", message);
   return NextResponse.redirect(target);
+}
+
+function sanitizeNextPath(value: string | null) {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return "/calendar";
+  if (value.startsWith("/api/auth/")) return "/calendar";
+  return value;
 }
