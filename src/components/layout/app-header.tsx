@@ -18,7 +18,7 @@ export function AppHeader({ user, selfUserId, users, back }: Props) {
       <Link
         href="/calendar"
         className="flex min-w-0 items-center gap-2 text-[15px] font-bold text-[var(--color-text-strong)]"
-        aria-label="G-DX For スケジュール"
+        aria-label="カレンダー｜dreaMs"
       >
         <Image
           src="/dreams-logo.png"
@@ -29,7 +29,7 @@ export function AppHeader({ user, selfUserId, users, back }: Props) {
           priority
         />
         <span className="hidden truncate sm:inline">
-          G-DX For スケジュール
+          カレンダー｜dreaMs
         </span>
       </Link>
 

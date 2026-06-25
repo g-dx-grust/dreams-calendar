@@ -108,7 +108,7 @@ CREATE TABLE project_schedule_logs (
 
 ### 5. カレンダーユーザープロフィール (`calendar_user_profiles`)
 
-共有 `users` テーブルを再定義せず、G-DX For スケジュール固有の Lark 補助情報を保存します。
+共有 `users` テーブルを再定義せず、カレンダー｜dreaMs固有の Lark 補助情報を保存します。
 
 ```sql
 CREATE TABLE calendar_user_profiles (

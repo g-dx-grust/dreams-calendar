@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * dreaMs カラートークン（G-DX For スケジュール 専用）
+ * dreaMs カラートークン（カレンダー｜dreaMs 専用）
  * Why: 親 G-DX ルールではなく dreaMs ルール準拠（CLAUDE.md §A 承認済み）
  * - Primary: #3370FF（Lark Blue）
  * - 角丸: 4px / 6px のみ。8px 以上は使用禁止

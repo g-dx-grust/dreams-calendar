@@ -10,8 +10,8 @@ const notoSansJP = Noto_Sans_JP({
 });
 
 export const metadata: Metadata = {
-  title: "G-DX For スケジュール",
-  description: "サイボウズ風カレンダー（株式会社グラスト G-DX）",
+  title: "カレンダー｜dreaMs",
+  description: "カレンダー｜dreaMs",
 };
 
 export default function RootLayout({

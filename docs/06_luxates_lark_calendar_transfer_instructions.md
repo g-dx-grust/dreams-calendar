@@ -1,9 +1,9 @@
 # 06. Luxates型Larkカレンダー連携 実装指示書
 
 - 作成日: 2026-06-26
-- 対象: G-DX For スケジュール
+- 対象: カレンダー｜dreaMs
 - 参照元: `/Users/shojiyuya/Desktop/仕事/グラスト/案件/G-DX/Luxates/新カレンダー案件`
-- 目的: Luxatesで実装済みのLark連携設計を、G-DX For スケジュールへ安全に移植する。
+- 目的: Luxatesで実装済みのLark連携設計を、カレンダー｜dreaMsへ安全に移植する。
 
 ---
 

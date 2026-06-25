@@ -48,7 +48,7 @@ export default async function LoginPage({
           />
           <div className="min-w-0">
             <h1 className="text-[20px] font-bold leading-tight text-[var(--color-text-strong)]">
-            G-DX For スケジュール
+              カレンダー｜dreaMs
             </h1>
             <p className="mt-1 text-[13px] text-[var(--color-text-mid)]">
               Larkアカウントでログインしてください。
