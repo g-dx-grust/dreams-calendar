@@ -78,7 +78,10 @@ export async function createLarkMeetingUrlForCurrentUser(
   };
 }
 
-async function ensurePrimaryCalendarId(userId: string, userAccessToken: string) {
+export async function ensurePrimaryCalendarId(
+  userId: string,
+  userAccessToken: string,
+) {
   const existing = await getStoredCalendarId(userId);
   if (existing) return existing;
 

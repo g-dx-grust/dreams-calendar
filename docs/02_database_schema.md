@@ -124,7 +124,7 @@ CREATE TABLE calendar_user_profiles (
 );
 ```
 
-`lark_calendar_id` は、Lark user access token で本人の主カレンダーIDを取得できた時点でキャッシュします。
+`lark_calendar_id` は、Lark user access token で本人の主カレンダーIDを取得できた時点でキャッシュします。環境変数で固定カレンダーIDは管理しません。
 
 ### 6. カレンダーユーザーセッション (`calendar_user_sessions`)
 

@@ -214,6 +214,38 @@ export async function getSessionLarkUserAccessToken(): Promise<string | null> {
   return record.session.lark_access_token;
 }
 
+export async function getLatestLarkUserAccessTokenForUser(
+  userId: string,
+): Promise<string | null> {
+  const db = getSupabaseAdmin();
+  if (!db) return null;
+
+  const { data, error } = await db
+    .from("calendar_user_sessions")
+    .select(
+      "id,user_id,lark_access_token,lark_refresh_token,lark_token_expires_at,expires_at,revoked_at",
+    )
+    .eq("user_id", userId)
+    .is("revoked_at", null)
+    .gt("expires_at", new Date().toISOString())
+    .not("lark_access_token", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  const session = data as CalendarUserSessionRow;
+  const nextSession = shouldRefreshLarkToken(session)
+    ? await refreshSessionLarkToken(session)
+    : session;
+  if (!nextSession.lark_access_token) return null;
+  if (nextSession.lark_token_expires_at) {
+    const expiresAt = new Date(nextSession.lark_token_expires_at).getTime();
+    if (expiresAt <= Date.now() + REFRESH_SKEW_MS) return null;
+  }
+  return nextSession.lark_access_token;
+}
+
 export async function clearSession() {
   const token = await getSessionCookieValue();
   if (token && token !== "preview" && !isLegacyToken(token)) {

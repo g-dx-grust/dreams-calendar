@@ -1,6 +1,6 @@
 import { formatISO } from "date-fns";
-import { larkConfig } from "./config";
-import { getLarkAppAccessToken } from "./provider-client";
+import { ensurePrimaryCalendarId } from "./calendar-meeting";
+import { getLarkOpenApisBaseUrl, LarkApiError } from "./provider-client";
 import {
   createScheduleAsync,
   getScheduleAsync,
@@ -9,6 +9,7 @@ import {
   listUsersAsync,
   updateScheduleAsync,
 } from "@/lib/schedule-store";
+import { getLatestLarkUserAccessTokenForUser } from "@/lib/session";
 import type { Schedule, ScheduleStatus } from "@/components/calendar/types";
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -80,9 +81,7 @@ type PullResult = {
 };
 
 function isConfigured() {
-  return Boolean(
-    larkConfig.appId && larkConfig.appSecret && larkConfig.calendarId,
-  );
+  return Boolean(process.env.LARK_APP_ID && process.env.LARK_APP_SECRET);
 }
 
 function toLarkEventBody(schedule: Schedule): LarkCalendarEventBody {
@@ -143,17 +142,18 @@ function normalizeLarkStatus(status: string | undefined): ScheduleStatus {
 
 async function listLarkEvents(
   token: string,
+  calendarId: string,
   startAt: Date,
   endAt: Date,
   limit: number,
 ): Promise<Result<LarkCalendarEvent[]>> {
-  const encodedCalendarId = encodeURIComponent(larkConfig.calendarId);
+  const encodedCalendarId = encodeURIComponent(calendarId);
   const items: LarkCalendarEvent[] = [];
   let pageToken = "";
 
   while (items.length < limit) {
     const url = new URL(
-      `${larkConfig.openApiBase}/calendar/v4/calendars/${encodedCalendarId}/events`,
+      `${getLarkOpenApisBaseUrl()}/calendar/v4/calendars/${encodedCalendarId}/events`,
     );
     url.searchParams.set(
       "start_time",
@@ -186,9 +186,10 @@ async function listLarkEvents(
 async function requestCalendarEvent(
   method: "POST" | "PATCH" | "DELETE",
   token: string,
+  calendarId: string,
   schedule: Schedule,
 ): Promise<Result<string>> {
-  const encodedCalendarId = encodeURIComponent(larkConfig.calendarId);
+  const encodedCalendarId = encodeURIComponent(calendarId);
   const encodedEventId = schedule.larkEventId
     ? encodeURIComponent(schedule.larkEventId)
     : "";
@@ -196,7 +197,7 @@ async function requestCalendarEvent(
     method === "POST"
       ? `/calendar/v4/calendars/${encodedCalendarId}/events`
       : `/calendar/v4/calendars/${encodedCalendarId}/events/${encodedEventId}`;
-  const url = new URL(`${larkConfig.openApiBase}${eventPath}`);
+  const url = new URL(`${getLarkOpenApisBaseUrl()}${eventPath}`);
   url.searchParams.set("need_notification", "false");
 
   const response = await fetch(url, {
@@ -218,6 +219,40 @@ async function requestCalendarEvent(
   return { ok: true, data: readEventId(json) || schedule.larkEventId || "" };
 }
 
+function getScheduleOwnerUserId(schedule: Schedule) {
+  return schedule.userIds[0] ?? "";
+}
+
+async function resolveUserLarkCalendar(userId: string): Promise<
+  Result<{
+    userId: string;
+    token: string;
+    calendarId: string;
+  }>
+> {
+  if (!userId) {
+    return { ok: false, error: "Lark同期対象の担当者が未設定です" };
+  }
+
+  const token = await getLatestLarkUserAccessTokenForUser(userId);
+  if (!token) {
+    return {
+      ok: false,
+      error: "担当者がLarkでログインしていないため同期できません",
+    };
+  }
+
+  try {
+    const calendarId = await ensurePrimaryCalendarId(userId, token);
+    return { ok: true, data: { userId, token, calendarId } };
+  } catch (error) {
+    if (error instanceof LarkApiError) {
+      return { ok: false, error: error.message };
+    }
+    return { ok: false, error: "Lark主カレンダーIDを取得できませんでした" };
+  }
+}
+
 export async function syncScheduleToLark(schedule: Schedule): Promise<SyncResult> {
   if (schedule.syncSource === "lark") {
     return {
@@ -236,14 +271,15 @@ export async function syncScheduleToLark(schedule: Schedule): Promise<SyncResult
     };
   }
 
-  const token = await getLarkAppAccessToken();
-  if (!token.ok) {
-    return { ok: false, scheduleId: schedule.id, error: token.error };
+  const resolved = await resolveUserLarkCalendar(getScheduleOwnerUserId(schedule));
+  if (!resolved.ok) {
+    return { ok: false, scheduleId: schedule.id, error: resolved.error };
   }
 
   const result = await requestCalendarEvent(
     schedule.larkEventId ? "PATCH" : "POST",
-    token.data,
+    resolved.data.token,
+    resolved.data.calendarId,
     schedule,
   );
   if (!result.ok) {
@@ -276,11 +312,17 @@ export async function deleteScheduleFromLark(
     };
   }
 
-  const token = await getLarkAppAccessToken();
-  if (!token.ok) {
-    return { ok: false, scheduleId: schedule.id, error: token.error };
+  const resolved = await resolveUserLarkCalendar(getScheduleOwnerUserId(schedule));
+  if (!resolved.ok) {
+    return { ok: false, scheduleId: schedule.id, error: resolved.error };
   }
-  const result = await requestCalendarEvent("DELETE", token.data, schedule);
+
+  const result = await requestCalendarEvent(
+    "DELETE",
+    resolved.data.token,
+    resolved.data.calendarId,
+    schedule,
+  );
   if (!result.ok) {
     return { ok: false, scheduleId: schedule.id, error: result.error };
   }
@@ -336,12 +378,10 @@ function defaultPullEnd() {
   return end;
 }
 
-async function resolveImportedUserIds(existing?: Schedule) {
+async function resolveImportedUserIds(userId: string, existing?: Schedule) {
   if (existing?.userIds.length) return existing.userIds;
   const users = await listUsersAsync();
-  const defaultUser =
-    users.find((user) => user.id === larkConfig.syncDefaultUserId) ?? users[0];
-  return defaultUser ? [defaultUser.id] : [];
+  return users.some((user) => user.id === userId) ? [userId] : [];
 }
 
 async function resolveImportedTypeId(existing?: Schedule) {
@@ -353,6 +393,7 @@ async function resolveImportedTypeId(existing?: Schedule) {
 async function upsertScheduleFromLarkEvent(
   event: LarkCalendarEvent,
   existingSchedules: Schedule[],
+  userId: string,
 ) {
   const larkEventId = event.event_id ?? "";
   if (!larkEventId) {
@@ -384,7 +425,7 @@ async function upsertScheduleFromLarkEvent(
   const now = new Date();
   const base = {
     title,
-    userIds: await resolveImportedUserIds(existing),
+    userIds: await resolveImportedUserIds(userId, existing),
     typeId: await resolveImportedTypeId(existing),
     caseNumber,
     caseName,
@@ -430,14 +471,16 @@ async function upsertScheduleFromLarkEvent(
 }
 
 export async function pullLarkEventsToSchedules({
+  userId,
   startAt = defaultPullStart(),
   endAt = defaultPullEnd(),
   limit = 100,
 }: {
+  userId: string;
   startAt?: Date;
   endAt?: Date;
   limit?: number;
-} = {}): Promise<PullResult | { ok: false; error: string }> {
+}): Promise<PullResult | { ok: false; error: string }> {
   if (!isConfigured()) {
     return { ok: false, error: "Larkカレンダー同期設定が未設定です" };
   }
@@ -445,16 +488,28 @@ export async function pullLarkEventsToSchedules({
     return { ok: false, error: "同期期間が不正です" };
   }
 
-  const token = await getLarkAppAccessToken();
-  if (!token.ok) return { ok: false, error: token.error };
+  const resolved = await resolveUserLarkCalendar(userId);
+  if (!resolved.ok) return { ok: false, error: resolved.error };
 
-  const listed = await listLarkEvents(token.data, startAt, endAt, limit);
+  const listed = await listLarkEvents(
+    resolved.data.token,
+    resolved.data.calendarId,
+    startAt,
+    endAt,
+    limit,
+  );
   if (!listed.ok) return { ok: false, error: listed.error };
 
   const existingSchedules = await listSchedulesAsync();
   const results = [];
   for (const event of listed.data) {
-    results.push(await upsertScheduleFromLarkEvent(event, existingSchedules));
+    results.push(
+      await upsertScheduleFromLarkEvent(
+        event,
+        existingSchedules,
+        resolved.data.userId,
+      ),
+    );
   }
 
   return {

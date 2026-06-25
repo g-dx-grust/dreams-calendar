@@ -108,4 +108,5 @@ POST /api/calendar/meeting-url/lark
 
 ### 5.3 カレンダー同期
 
-`/api/lark/calendar/sync` は本番環境では `LARK_SYNC_SECRET` を必須にします。開発環境のみ、secret未設定でもローカル確認を許可します。
+`/api/lark/calendar/sync` のpush/bothや個別flushは、本番環境では `LARK_SYNC_SECRET` を必須にします。ログインユーザー本人のpull同期はセッションで許可します。開発環境のみ、secret未設定でもローカル確認を許可します。
+LarkのカレンダーIDは環境変数で固定せず、ログイン済みユーザーの user access token で主カレンダーIDを取得し、`calendar_user_profiles.lark_calendar_id` にキャッシュします。Lark予定を取り込むpull同期では対象ユーザーを `userId` で指定し、未指定時はログイン中ユーザー本人を対象にします。

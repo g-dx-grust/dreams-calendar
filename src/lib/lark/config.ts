@@ -16,9 +16,7 @@ export const larkConfig = {
   openApiBase: getLarkOpenApisBaseUrl(),
   authorizeBaseUrl:
     process.env.LARK_OAUTH_AUTHORIZE_BASE_URL ?? DEFAULT_AUTHORIZE_BASE_URL,
-  calendarId: process.env.LARK_CALENDAR_ID ?? "",
   syncSecret: process.env.LARK_SYNC_SECRET ?? "",
-  syncDefaultUserId: process.env.LARK_SYNC_DEFAULT_USER_ID ?? "",
   redirectUri:
     process.env.LARK_OAUTH_REDIRECT_URI ??
     process.env.NEXT_PUBLIC_LARK_REDIRECT_URI ??
