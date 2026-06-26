@@ -1,23 +1,23 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import {
-  format,
-  startOfMonth,
-  endOfMonth,
-  startOfWeek,
-  endOfWeek,
-  addDays,
-  isSameMonth,
-  isToday,
-} from "date-fns";
 import type { CalendarUser, Schedule, ScheduleType } from "./types";
 import { SchedulePopover } from "./schedule-popover";
 import {
   scheduleTypeBackground,
   scheduleTypeForeground,
 } from "./color-utils";
+import {
+  addJstDays,
+  endExclusiveOfJstMonth,
+  formatJstDate,
+  formatJstTime,
+  getJstParts,
+  startOfJstMonth,
+  startOfJstWeek,
+} from "@/lib/jst";
 
 const DAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 const MAX_VISIBLE_PER_DAY = 3;
@@ -30,21 +30,23 @@ type Props = {
 };
 
 export function MonthView({ date, users, schedules, scheduleTypes }: Props) {
+  const router = useRouter();
   const [popover, setPopover] = useState<{
     scheduleId: string;
     rect: DOMRect;
   } | null>(null);
-  const monthStart = startOfMonth(date);
-  const monthEnd = endOfMonth(date);
-  const gridStart = startOfWeek(monthStart, { weekStartsOn: 0 });
-  const gridEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
+  const monthStart = startOfJstMonth(date);
+  const monthEndExclusive = endExclusiveOfJstMonth(date);
+  const gridStart = startOfJstWeek(monthStart);
+  const lastMonthDay = addJstDays(monthEndExclusive, -1);
+  const gridEndExclusive = addJstDays(startOfJstWeek(lastMonthDay), 7);
 
   // グリッドの全日付（5 or 6 週分）
   const days: Date[] = [];
   let cursor = gridStart;
-  while (cursor <= gridEnd) {
+  while (cursor < gridEndExclusive) {
     days.push(cursor);
-    cursor = addDays(cursor, 1);
+    cursor = addJstDays(cursor, 1);
   }
 
   const typeMap = new Map(scheduleTypes.map((t) => [t.id, t]));
@@ -52,13 +54,17 @@ export function MonthView({ date, users, schedules, scheduleTypes }: Props) {
   // yyyy-MM-dd → schedules
   const byDay = new Map<string, Schedule[]>();
   for (const s of schedules) {
-    const key = format(s.startAt, "yyyy-MM-dd");
+    const key = formatJstDate(s.startAt);
     const list = byDay.get(key) ?? [];
     list.push(s);
     byDay.set(key, list);
   }
   for (const list of byDay.values()) {
     list.sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
+  }
+
+  function openCreateModal(dateKey: string) {
+    router.push(`/calendar?view=month&date=${dateKey}&new=1`);
   }
 
   return (
@@ -85,13 +91,16 @@ export function MonthView({ date, users, schedules, scheduleTypes }: Props) {
       {/* 月グリッド */}
       <div className="grid grid-cols-7 auto-rows-fr">
         {days.map((d) => {
-          const inMonth = isSameMonth(d, date);
-          const today = isToday(d);
-          const key = format(d, "yyyy-MM-dd");
+          const dParts = getJstParts(d);
+          const baseParts = getJstParts(date);
+          const inMonth =
+            dParts.year === baseParts.year && dParts.month === baseParts.month;
+          const today = formatJstDate(d) === formatJstDate(new Date());
+          const key = formatJstDate(d);
           const items = byDay.get(key) ?? [];
           const visible = items.slice(0, MAX_VISIBLE_PER_DAY);
           const hidden = items.length - visible.length;
-          const dow = d.getDay();
+          const dow = dParts.weekday;
           const dateColor =
             !inMonth
               ? "var(--color-text-disabled)"
@@ -106,7 +115,8 @@ export function MonthView({ date, users, schedules, scheduleTypes }: Props) {
           return (
             <div
               key={key}
-              className="border-b border-r border-[var(--color-border)] last-of-type:border-r min-h-[110px] p-1.5 space-y-1"
+              title="空きスペースをクリックして予定を追加"
+              className="border-b border-r border-[var(--color-border)] last-of-type:border-r min-h-[110px] p-1.5 space-y-1 cursor-pointer"
               style={{
                 background: today
                   ? "var(--color-primary-tint)"
@@ -114,14 +124,16 @@ export function MonthView({ date, users, schedules, scheduleTypes }: Props) {
                     ? "white"
                     : "var(--color-background)",
               }}
+              onClick={() => openCreateModal(key)}
             >
               <div className="flex items-center justify-between">
                 <Link
                   href={`/calendar?view=day&date=${key}`}
+                  onClick={(event) => event.stopPropagation()}
                   className="text-[12px] font-medium hover:underline"
                   style={{ color: dateColor }}
                 >
-                  {format(d, "d")}
+                  {dParts.day}
                 </Link>
                 {today ? (
                   <span className="text-[10px] px-1.5 rounded-[var(--radius-s)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
@@ -151,7 +163,7 @@ export function MonthView({ date, users, schedules, scheduleTypes }: Props) {
                       title={`${s.title}${s.caseNumber ? ` (${s.caseNumber})` : ""}`}
                     >
                       <span className="font-medium">
-                        {format(s.startAt, "HH:mm")}
+                        {formatJstTime(s.startAt)}
                       </span>{" "}
                       {s.title}
                     </button>
@@ -160,6 +172,7 @@ export function MonthView({ date, users, schedules, scheduleTypes }: Props) {
                 {hidden > 0 ? (
                   <Link
                     href={`/calendar?view=day&date=${key}`}
+                    onClick={(event) => event.stopPropagation()}
                     className="block text-[10px] text-[var(--color-text-mid)] hover:text-[var(--color-primary)] px-1.5"
                   >
                     他 {hidden} 件

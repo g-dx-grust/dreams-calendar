@@ -1,5 +1,6 @@
-import { differenceInMinutes, format } from "date-fns";
+import { differenceInMinutes } from "date-fns";
 import type { ProjectScheduleLog, Schedule } from "@/components/calendar/types";
+import { formatJstDate } from "@/lib/jst";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type SerializedProjectScheduleLog = Omit<
@@ -80,7 +81,7 @@ export function syncProjectScheduleLogs(schedule: Schedule): ProjectScheduleLog[
   if (!minutes) return [];
 
   const now = new Date().toISOString();
-  const workDate = format(schedule.actualStartAt ?? schedule.startAt, "yyyy-MM-dd");
+  const workDate = formatJstDate(schedule.actualStartAt ?? schedule.startAt);
   const created = schedule.userIds.map<SerializedProjectScheduleLog>((userId) => ({
     id: `${schedule.id}:${userId}`,
     caseId: schedule.caseId!,
@@ -103,7 +104,7 @@ function buildRows(schedule: Schedule) {
   const minutes = resolveActualMinutes(schedule);
   if (!minutes) return [];
 
-  const workDate = format(schedule.actualStartAt ?? schedule.startAt, "yyyy-MM-dd");
+  const workDate = formatJstDate(schedule.actualStartAt ?? schedule.startAt);
   return schedule.userIds.map((userId) => ({
     case_id: schedule.caseId!,
     schedule_id: schedule.id,

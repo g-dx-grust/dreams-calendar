@@ -55,8 +55,8 @@ type ScheduleRow = {
   actual_start_at: string | null;
   actual_end_at: string | null;
   actual_minutes: number | null;
-  actual_memo: string | null;
-  online_meeting_url: string | null;
+  actual_memo?: string | null;
+  online_meeting_url?: string | null;
   lark_event_id: string | null;
   sync_source: CalendarSyncSource;
   sync_status: CalendarSyncStatus;
@@ -65,8 +65,17 @@ type ScheduleRow = {
   cases?: { case_name: string | null } | { case_name: string | null }[] | null;
 };
 
+const SCHEDULE_BASE_SELECT =
+  "id,title,start_at,end_at,user_id,co_user_ids,case_id,case_number,schedule_type_id,location,memo,status,actual_start_at,actual_end_at,actual_minutes,lark_event_id,sync_source,sync_status,sync_error,last_synced_at,cases(case_name)";
 const SCHEDULE_SELECT =
   "id,title,start_at,end_at,user_id,co_user_ids,case_id,case_number,schedule_type_id,location,memo,status,actual_start_at,actual_end_at,actual_minutes,actual_memo,online_meeting_url,lark_event_id,sync_source,sync_status,sync_error,last_synced_at,cases(case_name)";
+
+export class ScheduleStoreError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ScheduleStoreError";
+  }
+}
 
 declare global {
   // eslint-disable-next-line no-var
@@ -117,6 +126,43 @@ function firstCaseName(
   return row?.case_name ?? undefined;
 }
 
+function isUndefinedColumnError(error: { code?: string; message?: string } | null) {
+  return (
+    error?.code === "42703" ||
+    missingOptionalScheduleColumns(error?.message).length > 0
+  );
+}
+
+function missingOptionalScheduleColumns(message?: string) {
+  if (!message) return [];
+  return (["actual_memo", "online_meeting_url"] as const).filter((column) =>
+    message.includes(column),
+  );
+}
+
+function stripMissingOptionalPayload(
+  payload: Record<string, unknown>,
+  error: { code?: string; message?: string } | null,
+) {
+  const missing = missingOptionalScheduleColumns(error?.message);
+  if (missing.length === 0) return payload;
+
+  const next = { ...payload };
+  for (const column of missing) {
+    if (next[column] != null) {
+      throw new ScheduleStoreError(
+        "予定の保存に必要なDBカラムが未適用です。Supabaseマイグレーションを反映してから再度お試しください。",
+      );
+    }
+    delete next[column];
+  }
+  return next;
+}
+
+function toStoreError(error: { message?: string } | null, fallback: string) {
+  return new ScheduleStoreError(error?.message || fallback);
+}
+
 function hydrateRow(row: ScheduleRow): Schedule {
   const userIds = dedupeUserIds([
     ...(row.user_id ? [row.user_id] : []),
@@ -161,11 +207,23 @@ export async function listSchedulesAsync(): Promise<Schedule[]> {
   const db = getSupabaseAdmin();
   if (!db) return listSchedules();
 
-  const { data, error } = await db
+  const result = await db
     .from("schedules")
     .select(SCHEDULE_SELECT)
     .is("deleted_at", null)
     .order("start_at", { ascending: true });
+  let data: unknown = result.data;
+  let error = result.error;
+
+  if (isUndefinedColumnError(error)) {
+    const retry = await db
+      .from("schedules")
+      .select(SCHEDULE_BASE_SELECT)
+      .is("deleted_at", null)
+      .order("start_at", { ascending: true });
+    data = retry.data;
+    error = retry.error;
+  }
 
   if (error || !data) return listSchedules();
   return (data as ScheduleRow[]).map(hydrateRow);
@@ -180,12 +238,25 @@ export async function getScheduleAsync(id: string): Promise<Schedule | null> {
   const db = getSupabaseAdmin();
   if (!db) return getSchedule(id);
 
-  const { data, error } = await db
+  const result = await db
     .from("schedules")
     .select(SCHEDULE_SELECT)
     .eq("id", id)
     .is("deleted_at", null)
     .maybeSingle();
+  let data: unknown = result.data;
+  let error = result.error;
+
+  if (isUndefinedColumnError(error)) {
+    const retry = await db
+      .from("schedules")
+      .select(SCHEDULE_BASE_SELECT)
+      .eq("id", id)
+      .is("deleted_at", null)
+      .maybeSingle();
+    data = retry.data;
+    error = retry.error;
+  }
 
   if (error || !data) return getSchedule(id);
   return hydrateRow(data as ScheduleRow);
@@ -307,13 +378,26 @@ export async function createScheduleAsync(
   const db = getSupabaseAdmin();
   if (!db) return createSchedule(input);
 
-  const { data, error } = await db
-    .from("schedules")
-    .insert(buildSchedulePayload(input))
-    .select(SCHEDULE_SELECT)
-    .single();
+  let payload: Record<string, unknown> = buildSchedulePayload(input);
+  let data: unknown = null;
+  let error: { code?: string; message?: string } | null = null;
 
-  if (error || !data) return createSchedule(input);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const result = await db
+      .from("schedules")
+      .insert(payload)
+      .select(attempt === 0 ? SCHEDULE_SELECT : SCHEDULE_BASE_SELECT)
+      .single();
+    data = result.data;
+    error = result.error;
+
+    if (!isUndefinedColumnError(error)) break;
+    payload = stripMissingOptionalPayload(payload, error);
+  }
+
+  if (error || !data) {
+    throw toStoreError(error, "予定の登録に失敗しました");
+  }
   return hydrateRow(data as ScheduleRow);
 }
 
@@ -432,15 +516,28 @@ export async function updateScheduleAsync(
   const db = getSupabaseAdmin();
   if (!db) return updateSchedule(id, patch);
 
-  const { data, error } = await db
-    .from("schedules")
-    .update(buildSchedulePatch(patch))
-    .eq("id", id)
-    .is("deleted_at", null)
-    .select(SCHEDULE_SELECT)
-    .maybeSingle();
+  let payload = buildSchedulePatch(patch);
+  let data: unknown = null;
+  let error: { code?: string; message?: string } | null = null;
 
-  if (error) return updateSchedule(id, patch);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const result = await db
+      .from("schedules")
+      .update(payload)
+      .eq("id", id)
+      .is("deleted_at", null)
+      .select(attempt === 0 ? SCHEDULE_SELECT : SCHEDULE_BASE_SELECT)
+      .maybeSingle();
+    data = result.data;
+    error = result.error;
+
+    if (!isUndefinedColumnError(error)) break;
+    payload = stripMissingOptionalPayload(payload, error);
+  }
+
+  if (error) {
+    throw toStoreError(error, "予定の更新に失敗しました");
+  }
   return data ? hydrateRow(data as ScheduleRow) : null;
 }
 

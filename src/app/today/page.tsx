@@ -1,6 +1,4 @@
 import Link from "next/link";
-import { format, isSameDay } from "date-fns";
-import { ja } from "date-fns/locale";
 import { CalendarDays } from "lucide-react";
 import { getSession } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
@@ -18,6 +16,11 @@ import {
   scheduleTypeBackground,
   scheduleTypeForeground,
 } from "@/components/calendar/color-utils";
+import {
+  formatJstDateLabel,
+  formatJstTime,
+  isSameJstDay,
+} from "@/lib/jst";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +46,7 @@ export default async function TodayPage({
   const all = await listSchedulesAsync();
   const items = all
     .filter(
-      (s) => s.userIds.includes(selfId) && isSameDay(s.startAt, today),
+      (s) => s.userIds.includes(selfId) && isSameJstDay(s.startAt, today),
     )
     .sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
 
@@ -58,7 +61,7 @@ export default async function TodayPage({
               今日の予定
             </h1>
             <p className="text-[13px] text-[var(--color-text-mid)] mt-0.5">
-              {format(today, "yyyy年M月d日(EEE)", { locale: ja })}
+              {formatJstDateLabel(today)}
             </p>
 
             <form
@@ -145,7 +148,7 @@ function ScheduleList({
             <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-background)]">
               <div className="flex items-center gap-2">
                 <span className="text-[13px] font-medium text-[var(--color-text-strong)]">
-                  {format(s.startAt, "HH:mm")} – {format(s.endAt, "HH:mm")}
+                  {formatJstTime(s.startAt)} – {formatJstTime(s.endAt)}
                 </span>
                 {t ? (
                   <span

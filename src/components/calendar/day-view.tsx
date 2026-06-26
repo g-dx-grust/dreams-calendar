@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { format } from "date-fns";
+import { useRouter } from "next/navigation";
 import {
   DndContext,
   PointerSensor,
@@ -24,6 +24,7 @@ import {
   scheduleTypeBackground,
   scheduleTypeForeground,
 } from "./color-utils";
+import { dateAtJstTime, formatJstTime, getJstParts } from "@/lib/jst";
 import { cn } from "@/lib/utils";
 
 import {
@@ -54,11 +55,21 @@ type Props = {
 };
 
 function makeMinutesFromStart(startHour: number) {
-  return (d: Date) => (d.getHours() - startHour) * 60 + d.getMinutes();
+  return (d: Date) => {
+    const parts = getJstParts(d);
+    return (parts.hour - startHour) * 60 + parts.minute;
+  };
 }
 
 function pxFromMinutes(minutes: number) {
   return (minutes / 60) * HOUR_WIDTH_PX;
+}
+
+function formatMinutesAsTime(startHour: number, minutesFromStart: number) {
+  const total = startHour * 60 + minutesFromStart;
+  const hour = Math.floor(total / 60) % 24;
+  const minute = total % 60;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
 export function DayView({
@@ -117,6 +128,7 @@ function DayViewContent({
   currentUserId,
   canViewAllReports,
 }: Props) {
+  const router = useRouter();
   const totalHours = endHour - startHour;
   const totalSlots = totalHours * SLOTS_PER_HOUR;
   const totalMinutes = totalHours * 60;
@@ -133,6 +145,19 @@ function DayViewContent({
 
   function handleScheduleClick(id: string, target: HTMLElement) {
     setPopover({ scheduleId: id, rect: target.getBoundingClientRect() });
+  }
+
+  function openCreateModal(userId: string, startMinutes: number) {
+    const startTime = formatMinutesAsTime(startHour, startMinutes);
+    const endTime = formatMinutesAsTime(
+      startHour,
+      Math.min(startMinutes + 60, totalMinutes),
+    );
+    router.push(
+      `/calendar?view=day&date=${reportDate}&new=1&userId=${encodeURIComponent(
+        userId,
+      )}&start=${startTime}&end=${endTime}`,
+    );
   }
 
   // 楽観的更新用：サーバーから来た schedules を初期値とし、D&D 直後はローカルで先に動かす
@@ -332,6 +357,7 @@ function DayViewContent({
                 canOpenReport={canViewAllReports || u.id === currentUserId}
                 onScheduleClick={handleScheduleClick}
                 onResize={handleResize}
+                onCreate={openCreateModal}
               />
             ))}
           </div>
@@ -393,6 +419,7 @@ function UserRow({
   canOpenReport,
   onScheduleClick,
   onResize,
+  onCreate,
 }: {
   user: CalendarUser;
   schedules: Schedule[];
@@ -406,6 +433,7 @@ function UserRow({
   canOpenReport: boolean;
   onScheduleClick: (id: string, target: HTMLElement) => void;
   onResize: (id: string, newStart: Date, newEnd: Date) => void;
+  onCreate: (userId: string, startMinutes: number) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `user-${user.id}` });
   const completedSchedules = schedules.filter(
@@ -454,11 +482,29 @@ function UserRow({
       {/* 右：タイムライン（Droppable） */}
       <div
         ref={setNodeRef}
+        role="button"
+        tabIndex={0}
+        title="空き時間をクリックして予定を追加"
         className={cn(
           "relative transition-colors",
           isOver ? "bg-[var(--color-primary-soft)]" : "bg-white",
         )}
         style={{ width: timelineWidthPx, minWidth: timelineWidthPx }}
+        onClick={(event) => {
+          if (event.defaultPrevented) return;
+          const rect = event.currentTarget.getBoundingClientRect();
+          const x = event.clientX - rect.left;
+          const slot = Math.max(
+            0,
+            Math.min(totalSlots - 1, Math.floor(x / SLOT_WIDTH_PX)),
+          );
+          onCreate(user.id, slot * SNAP_MIN);
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          onCreate(user.id, 0);
+        }}
       >
         {/* 15 分刻みの縦グリッド線（毎時のみ実線、それ以外は薄い破線） */}
         {Array.from({ length: totalSlots }, (_, i) => (
@@ -466,8 +512,8 @@ function UserRow({
             key={i}
             className={
               i % SLOTS_PER_HOUR === 0
-                ? "absolute top-0 bottom-0 border-l border-[var(--color-border)]"
-                : "absolute top-0 bottom-0 border-l border-dashed border-[var(--color-border)] opacity-40"
+                ? "pointer-events-none absolute top-0 bottom-0 border-l border-[var(--color-border)]"
+                : "pointer-events-none absolute top-0 bottom-0 border-l border-dashed border-[var(--color-border)] opacity-40"
             }
             style={{ left: i * SLOT_WIDTH_PX }}
           />
@@ -506,7 +552,7 @@ function buildDailyReportDraft(schedules: Schedule[]): string | undefined {
         : "";
       const memoPart = schedule.actualMemo ? `\n  作業メモ：${schedule.actualMemo}` : "";
       const actualEnd = schedule.actualEndAt ?? schedule.endAt;
-      return `・${format(schedule.startAt, "HH:mm")}〜${format(actualEnd, "HH:mm")} ${schedule.title}${casePart}${actualPart}${memoPart}`;
+      return `・${formatJstTime(schedule.startAt)}〜${formatJstTime(actualEnd)} ${schedule.title}${casePart}${actualPart}${memoPart}`;
     })
     .join("\n");
 }
@@ -638,12 +684,16 @@ function DraggableScheduleBlock({
 
         if (newStartMin === origStartMin && newEndMin === origEndMin) return;
 
-        const newStart = new Date(schedule.startAt);
-        newStart.setHours(startHour, 0, 0, 0);
-        newStart.setMinutes(newStartMin);
-        const newEnd = new Date(schedule.endAt);
-        newEnd.setHours(startHour, 0, 0, 0);
-        newEnd.setMinutes(newEndMin);
+        const newStart = dateAtJstTime(
+          schedule.startAt,
+          startHour + Math.floor(newStartMin / 60),
+          newStartMin % 60,
+        );
+        const newEnd = dateAtJstTime(
+          schedule.endAt,
+          startHour + Math.floor(newEndMin / 60),
+          newEndMin % 60,
+        );
 
         onResize(schedule.id, newStart, newEnd);
       };

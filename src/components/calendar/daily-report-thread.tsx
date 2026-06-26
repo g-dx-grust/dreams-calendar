@@ -1,14 +1,13 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { format } from "date-fns";
-import { ja } from "date-fns/locale";
 import { Pencil, Trash2 } from "lucide-react";
 import {
   deleteDailyReportReplyAction,
   postDailyReportReplyAction,
   updateDailyReportReplyAction,
 } from "@/app/calendar/daily-report-actions";
+import { formatJstShortDateTime } from "@/lib/jst";
 import type { CalendarUser, DailyReportReply } from "./types";
 
 type SerializedDailyReportReply = Omit<
@@ -142,7 +141,7 @@ function ReplyItem({
     });
   }
 
-  const stamp = format(reply.updatedAt, "M/d(EEE) HH:mm", { locale: ja });
+  const stamp = formatJstShortDateTime(reply.updatedAt);
   const edited = reply.updatedAt.getTime() !== reply.createdAt.getTime();
 
   return (

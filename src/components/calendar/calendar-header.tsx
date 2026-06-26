@@ -2,10 +2,18 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { format, addDays, addMonths, startOfWeek, endOfWeek } from "date-fns";
-import { ja } from "date-fns/locale";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
+import {
+  addJstDays,
+  addJstMonths,
+  formatJstDate,
+  formatJstDateJa,
+  formatJstYearMonth,
+  jstWeekday,
+  parseJstDate,
+  startOfJstWeek,
+} from "@/lib/jst";
 import { cn } from "@/lib/utils";
 
 export type CalendarView = "day" | "week" | "month";
@@ -23,25 +31,25 @@ const VIEWS: { key: CalendarView; label: string }[] = [
 ];
 
 function fmtDate(d: Date) {
-  return format(d, "yyyy-MM-dd");
+  return formatJstDate(d);
 }
 
 function periodTitle(view: CalendarView, date: Date) {
   if (view === "day") {
-    return `${format(date, "yyyy年M月d日", { locale: ja })}（${format(date, "EEE", { locale: ja })}）`;
+    return `${formatJstDateJa(date)}（${jstWeekday(date)}）`;
   }
   if (view === "week") {
-    const s = startOfWeek(date, { weekStartsOn: 0 });
-    const e = endOfWeek(date, { weekStartsOn: 0 });
-    return `${format(s, "yyyy年M月d日", { locale: ja })} 〜 ${format(e, "M月d日", { locale: ja })}`;
+    const s = startOfJstWeek(date);
+    const e = addJstDays(s, 6);
+    return `${formatJstDateJa(s)} 〜 ${formatJstDateJa(e).replace(/^\d+年/, "")}`;
   }
-  return format(date, "yyyy年M月", { locale: ja });
+  return formatJstYearMonth(date);
 }
 
 function shift(view: CalendarView, date: Date, dir: -1 | 1): Date {
-  if (view === "day") return addDays(date, dir);
-  if (view === "week") return addDays(date, dir * 7);
-  return addMonths(date, dir);
+  if (view === "day") return addJstDays(date, dir);
+  if (view === "week") return addJstDays(date, dir * 7);
+  return addJstMonths(date, dir);
 }
 
 function buildUrl(view: CalendarView, date: Date) {
@@ -75,7 +83,7 @@ export function CalendarHeader({ view, date, dataMode = "database" }: Props) {
           ) : null}
         </div>
         <Link
-          href="/calendar/new"
+          href={`${buildUrl(view, date)}&new=1`}
           className={cn(buttonVariants({ variant: "primary", size: "md" }))}
         >
           <Plus size={16} />
@@ -134,7 +142,8 @@ export function CalendarHeader({ view, date, dataMode = "database" }: Props) {
             value={fmtDate(date)}
             onChange={(e) => {
               if (!e.target.value) return;
-              router.push(buildUrl(view, new Date(e.target.value)));
+              const parsed = parseJstDate(e.target.value);
+              if (parsed) router.push(buildUrl(view, parsed));
             }}
             className="h-10 px-3 text-[13px] bg-white text-[var(--color-text-strong)] border border-[var(--color-border)] rounded-[var(--radius-m)] focus:border-[var(--color-primary)] focus:outline-none"
           />

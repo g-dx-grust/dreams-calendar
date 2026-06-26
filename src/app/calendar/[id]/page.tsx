@@ -1,7 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { format, isSameDay } from "date-fns";
-import { ja } from "date-fns/locale";
 import { ChevronLeft } from "lucide-react";
 import { getSession } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
@@ -18,6 +16,13 @@ import {
   listUsersAsync,
 } from "@/lib/schedule-store";
 import { getCurrentUserId } from "@/lib/self";
+import {
+  formatJstDate,
+  formatJstDateLabel,
+  formatJstDateTimeLocal,
+  formatJstTime,
+  isSameJstDay,
+} from "@/lib/jst";
 import { updateScheduleAction } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -40,15 +45,13 @@ export default async function ScheduleDetailPage({
     .map((userId) => users.find((user) => user.id === userId))
     .filter((user): user is (typeof users)[number] => Boolean(user));
 
-  const fmtDate = (d: Date) => format(d, "yyyy-MM-dd");
-  const fmtTime = (d: Date) => format(d, "HH:mm");
-  const fmtDateTimeLocal = (d?: Date) =>
-    d ? format(d, "yyyy-MM-dd'T'HH:mm") : "";
-  const fmtDateLabel = (d: Date) =>
-    format(d, "yyyy年M月d日(EEE)", { locale: ja });
+  const fmtDate = (d: Date) => formatJstDate(d);
+  const fmtTime = (d: Date) => formatJstTime(d);
+  const fmtDateTimeLocal = (d?: Date) => formatJstDateTimeLocal(d);
+  const fmtDateLabel = (d: Date) => formatJstDateLabel(d);
 
   const timeRange = (() => {
-    const sameDay = isSameDay(schedule.startAt, schedule.endAt);
+    const sameDay = isSameJstDay(schedule.startAt, schedule.endAt);
     const startDate = fmtDateLabel(schedule.startAt);
     const endDate = fmtDateLabel(schedule.endAt);
     const startTime = fmtTime(schedule.startAt);
@@ -74,7 +77,7 @@ export default async function ScheduleDetailPage({
     : "";
   const actualRange =
     schedule.actualStartAt && schedule.actualEndAt
-      ? isSameDay(schedule.actualStartAt, schedule.actualEndAt)
+      ? isSameJstDay(schedule.actualStartAt, schedule.actualEndAt)
         ? `${fmtDateLabel(schedule.actualStartAt)} ${fmtTime(schedule.actualStartAt)} 〜 ${fmtTime(schedule.actualEndAt)}`
         : `${fmtDateLabel(schedule.actualStartAt)} ${fmtTime(schedule.actualStartAt)} 〜 ${fmtDateLabel(schedule.actualEndAt)} ${fmtTime(schedule.actualEndAt)}`
       : "";

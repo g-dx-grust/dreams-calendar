@@ -10,6 +10,11 @@ import { Plus, Video, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  parseJstDateTimeLocal,
+  toJstOffsetDateTime,
+  toJstOffsetDateTimeLocal,
+} from "@/lib/jst";
 import { TimePicker15 } from "./time-picker-15";
 import {
   SCHEDULE_STATUS_LABEL,
@@ -99,11 +104,13 @@ const formSchema = z
         message: "作業開始と作業終了はセットで入力してください",
       });
     }
-    if (
-      v.actualStartAt &&
-      v.actualEndAt &&
-      new Date(v.actualStartAt) >= new Date(v.actualEndAt)
-    ) {
+    const actualStart = v.actualStartAt
+      ? parseJstDateTimeLocal(v.actualStartAt)
+      : null;
+    const actualEnd = v.actualEndAt
+      ? parseJstDateTimeLocal(v.actualEndAt)
+      : null;
+    if (actualStart && actualEnd && actualStart >= actualEnd) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["actualEndAt"],
@@ -140,6 +147,7 @@ type CaseOption = {
   id: number;
   caseNumber: string;
   caseName: string;
+  clientName?: string;
 };
 
 type CaseSearchResponse = {
@@ -338,21 +346,40 @@ export function ScheduleForm({
       }
       fd.set("typeId", values.typeId);
       fd.set("isAllDay", values.isAllDay ? "true" : "false");
-      if (values.isAllDay) {
-        fd.set("startAt", `${values.startDate}T00:00`);
-        fd.set("endAt", `${values.endDate}T23:59`);
-      } else {
-        fd.set("startAt", `${values.startDate}T${values.startTime}`);
-        fd.set("endAt", `${values.startDate}T${values.endTime}`);
+      const startAt = values.isAllDay
+        ? toJstOffsetDateTime(values.startDate, "00:00")
+        : toJstOffsetDateTime(values.startDate, values.startTime);
+      const endAt = values.isAllDay
+        ? toJstOffsetDateTime(values.endDate, "23:59")
+        : toJstOffsetDateTime(values.startDate, values.endTime);
+      if (!startAt || !endAt) {
+        setServerError("日時が不正です。入力内容を確認してください。");
+        return;
       }
+      fd.set("startAt", startAt);
+      fd.set("endAt", endAt);
       if (values.caseId) fd.set("caseId", values.caseId);
       if (values.caseNumber) fd.set("caseNumber", values.caseNumber);
       if (values.caseName) fd.set("caseName", values.caseName);
       if (values.location) fd.set("location", values.location);
       if (values.memo) fd.set("memo", values.memo);
       fd.set("status", values.status);
-      if (values.actualStartAt) fd.set("actualStartAt", values.actualStartAt);
-      if (values.actualEndAt) fd.set("actualEndAt", values.actualEndAt);
+      const actualStartAt = values.actualStartAt
+        ? toJstOffsetDateTimeLocal(values.actualStartAt)
+        : null;
+      const actualEndAt = values.actualEndAt
+        ? toJstOffsetDateTimeLocal(values.actualEndAt)
+        : null;
+      if (values.actualStartAt && !actualStartAt) {
+        setServerError("作業開始が不正です。入力内容を確認してください。");
+        return;
+      }
+      if (values.actualEndAt && !actualEndAt) {
+        setServerError("作業終了が不正です。入力内容を確認してください。");
+        return;
+      }
+      if (actualStartAt) fd.set("actualStartAt", actualStartAt);
+      if (actualEndAt) fd.set("actualEndAt", actualEndAt);
       if (values.actualMinutes) fd.set("actualMinutes", values.actualMinutes);
       if (values.actualMemo) fd.set("actualMemo", values.actualMemo);
       if (values.onlineMeetingUrl) {
@@ -370,10 +397,17 @@ export function ScheduleForm({
   async function generateLarkMeetingUrl(force = false) {
     if (isMeetingGenerating) return;
     const mainAssigneeId = watchedUserIds[0] ?? "";
-    const startAt = toIsoFromLocal(startDate, startTime);
-    const endAt = toIsoFromLocal(isAllDay ? endDate : startDate, endTime);
-    if (!isOnlineType || isAllDay) return;
-    if (!mainAssigneeId || !startAt || !endAt) return;
+    const startAt = toJstOffsetDateTime(startDate, startTime);
+    const endAt = toJstOffsetDateTime(isAllDay ? endDate : startDate, endTime);
+    if (!force && !isOnlineType) return;
+    if (isAllDay) {
+      setMeetingError("終日予定では会議URLを発行できません。時間を指定してください。");
+      return;
+    }
+    if (!mainAssigneeId || !startAt || !endAt) {
+      setMeetingError("担当者と日時を入力してから会議URLを発行してください。");
+      return;
+    }
     if (!force && onlineMeetingUrl) return;
 
     setMeetingError(null);
@@ -467,32 +501,34 @@ export function ScheduleForm({
         </Select>
       </Field>
 
-      {isOnlineType ? (
-        <Field
-          label="会議URL"
-          hint="Larkの主カレンダーに会議予定を作成し、予定詳細に表示します。"
-          error={meetingError ?? errors.onlineMeetingUrl?.message}
-        >
-          <input type="hidden" {...register("larkEventId")} />
-          <div className="flex flex-wrap gap-2">
-            <Input
-              {...register("onlineMeetingUrl")}
-              readOnly
-              className="flex-1 min-w-[260px]"
-              placeholder={isMeetingGenerating ? "会議URLを発行中…" : ""}
-            />
-            <button
-              type="button"
-              onClick={() => void generateLarkMeetingUrl(true)}
-              disabled={isMeetingGenerating || isAllDay}
-              className="inline-flex h-9 items-center gap-1 rounded-[var(--radius-m)] border border-[var(--color-border)] bg-white px-3 text-[13px] text-[var(--color-text-strong)] hover:bg-[var(--color-background)] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Video size={14} />
-              {isMeetingGenerating ? "発行中…" : "Larkで再発行する"}
-            </button>
-          </div>
-        </Field>
-      ) : null}
+      <Field
+        label="オンライン会議"
+        hint="Larkの主カレンダーに会議予定を作成し、予定詳細に表示します。"
+        error={meetingError ?? errors.onlineMeetingUrl?.message}
+      >
+        <input type="hidden" {...register("larkEventId")} />
+        <div className="flex flex-wrap gap-2">
+          <Input
+            {...register("onlineMeetingUrl")}
+            readOnly
+            className="flex-1 min-w-[260px]"
+            placeholder={isMeetingGenerating ? "会議URLを発行中…" : ""}
+          />
+          <button
+            type="button"
+            onClick={() => void generateLarkMeetingUrl(true)}
+            disabled={isMeetingGenerating || isAllDay}
+            className="inline-flex h-9 items-center gap-1 rounded-[var(--radius-m)] border border-[var(--color-border)] bg-white px-3 text-[13px] text-[var(--color-text-strong)] hover:bg-[var(--color-background)] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Video size={14} />
+            {isMeetingGenerating
+              ? "発行中…"
+              : onlineMeetingUrl
+                ? "Larkで再発行する"
+                : "Larkで発行する"}
+          </button>
+        </div>
+      </Field>
 
       <Field label="ステータス" required error={errors.status?.message}>
         <Select {...register("status")}>
@@ -653,8 +689,8 @@ export function ScheduleForm({
       </Field>
 
       <Field
-        label="案件番号"
-        hint="2文字以上でkanri-systemの案件を検索します。選択しない場合は番号だけ保存されます。"
+        label="案件番号・案件名・顧客名"
+        hint="2文字以上でkanri-systemの案件を検索します。候補を選択すると案件に紐付きます。"
         error={errors.caseNumber?.message}
       >
         <input type="hidden" {...register("caseId")} />
@@ -663,7 +699,7 @@ export function ScheduleForm({
           <Input
             {...caseNumberField}
             autoComplete="off"
-            placeholder="例：2026-LI-001"
+            placeholder="例：2026-LI-001、豊橋市A現場、顧客名"
             aria-autocomplete="list"
             aria-expanded={showCaseSearchPanel}
             onFocus={() => setIsCaseSuggestOpen(true)}
@@ -820,6 +856,11 @@ function CaseSuggestionPanel({
               <span className="block text-[12px] text-[var(--color-text-mid)]">
                 {option.caseName}
               </span>
+              {option.clientName ? (
+                <span className="block text-[12px] text-[var(--color-text-weak)]">
+                  顧客：{option.clientName}
+                </span>
+              ) : null}
             </button>
           ))
         : null}
@@ -841,12 +882,6 @@ const Select = ({
     {...props}
   />
 );
-
-function toIsoFromLocal(date: string, time: string) {
-  if (!date || !time) return null;
-  const parsed = new Date(`${date}T${time}`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
-}
 
 function UserMultiSelect({
   users,

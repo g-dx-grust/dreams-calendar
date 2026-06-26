@@ -1,10 +1,9 @@
-import { format } from "date-fns";
-import { ja } from "date-fns/locale";
 import { Bell, CheckCircle2, AlertTriangle } from "lucide-react";
 import { getSession } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
 import { AdminNav } from "@/components/admin/admin-nav";
 import { listNotifications } from "@/lib/lark/notify";
+import { formatJstSlashDateTime } from "@/lib/jst";
 
 export const dynamic = "force-dynamic";
 
@@ -63,9 +62,7 @@ export default async function NotificationsPage() {
                     >
                       <Td>
                         <span className="text-[12px] text-[var(--color-text-mid)] font-mono">
-                          {format(new Date(it.at), "yyyy/MM/dd HH:mm:ss", {
-                            locale: ja,
-                          })}
+                          {formatJstSlashDateTime(new Date(it.at))}
                         </span>
                       </Td>
                       <Td>{it.to.name}</Td>

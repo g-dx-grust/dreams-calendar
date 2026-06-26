@@ -1,15 +1,22 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { format, startOfWeek, addDays, isToday } from "date-fns";
-import { ja } from "date-fns/locale";
 import type { CalendarUser, Schedule, ScheduleType } from "./types";
 import { SchedulePopover } from "./schedule-popover";
 import {
   scheduleTypeBackground,
   scheduleTypeForeground,
 } from "./color-utils";
+import {
+  addJstDays,
+  formatJstDate,
+  formatJstTime,
+  getJstParts,
+  jstWeekday,
+  startOfJstWeek,
+} from "@/lib/jst";
 
 const USER_COL_PX = 140;
 const DAY_COL_MIN_PX = 160;
@@ -22,6 +29,7 @@ type Props = {
 };
 
 export function WeekView({ date, users, schedules, scheduleTypes }: Props) {
+  const router = useRouter();
   const typeMap = useMemo(
     () => new Map(scheduleTypes.map((t) => [t.id, t])),
     [scheduleTypes],
@@ -34,8 +42,8 @@ export function WeekView({ date, users, schedules, scheduleTypes }: Props) {
   } | null>(null);
 
   const days = useMemo(() => {
-    const start = startOfWeek(date, { weekStartsOn: 0 });
-    return Array.from({ length: 7 }, (_, i) => addDays(start, i));
+    const start = startOfJstWeek(date);
+    return Array.from({ length: 7 }, (_, i) => addJstDays(start, i));
   }, [date]);
 
   const indexed = useMemo(() => {
@@ -43,7 +51,7 @@ export function WeekView({ date, users, schedules, scheduleTypes }: Props) {
     const map = new Map<string, Schedule[]>();
     for (const s of schedules) {
       for (const uid of s.userIds) {
-        const key = `${uid}|${format(s.startAt, "yyyy-MM-dd")}`;
+        const key = `${uid}|${formatJstDate(s.startAt)}`;
         const list = map.get(key) ?? [];
         list.push(s);
         map.set(key, list);
@@ -54,6 +62,14 @@ export function WeekView({ date, users, schedules, scheduleTypes }: Props) {
     }
     return map;
   }, [schedules]);
+
+  function openCreateModal(dateKey: string, userId: string) {
+    router.push(
+      `/calendar?view=week&date=${dateKey}&new=1&userId=${encodeURIComponent(
+        userId,
+      )}&start=09:00&end=10:00`,
+    );
+  }
 
   return (
     <div className="bg-white border border-[var(--color-border)] rounded-[var(--radius-m)] overflow-hidden">
@@ -71,15 +87,16 @@ export function WeekView({ date, users, schedules, scheduleTypes }: Props) {
             社員
           </div>
           {days.map((d) => {
-            const today = isToday(d);
-            const dow = format(d, "EEEEE", { locale: ja }); // 1文字曜日
+            const today = formatJstDate(d) === formatJstDate(new Date());
+            const parts = getJstParts(d);
             return (
               <div
                 key={d.toISOString()}
                 className="sticky top-0 z-20 bg-white border-b border-r border-[var(--color-border)] h-11 flex items-center justify-between gap-2 px-3"
               >
                 <Link
-                  href={`/calendar?view=day&date=${format(d, "yyyy-MM-dd")}`}
+                  href={`/calendar?view=day&date=${formatJstDate(d)}`}
+                  onClick={(event) => event.stopPropagation()}
                   className="text-[13px] font-medium hover:underline"
                   style={{
                     color: today
@@ -87,7 +104,7 @@ export function WeekView({ date, users, schedules, scheduleTypes }: Props) {
                       : "var(--color-text-strong)",
                   }}
                 >
-                  {format(d, "M/d")}（{dow}）
+                  {parts.month}/{parts.day}（{jstWeekday(d)}）
                 </Link>
                 {today ? (
                   <span className="text-[10px] px-1.5 py-0.5 rounded-[var(--radius-s)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
@@ -107,16 +124,19 @@ export function WeekView({ date, users, schedules, scheduleTypes }: Props) {
                 {u.name}
               </div>
               {days.map((d) => {
-                const key = `${u.id}|${format(d, "yyyy-MM-dd")}`;
+                const key = `${u.id}|${formatJstDate(d)}`;
+                const dateKey = formatJstDate(d);
                 const dayItems = indexed.get(key) ?? [];
-                const today = isToday(d);
+                const today = formatJstDate(d) === formatJstDate(new Date());
                 return (
                   <div
                     key={key}
-                    className="border-b border-r border-[var(--color-border)] p-1.5 min-h-[88px] space-y-1"
+                    title="空きスペースをクリックして予定を追加"
+                    className="border-b border-r border-[var(--color-border)] p-1.5 min-h-[88px] space-y-1 cursor-pointer"
                     style={{
                       background: today ? "var(--color-primary-tint)" : "white",
                     }}
+                    onClick={() => openCreateModal(dateKey, u.id)}
                   >
                     {dayItems.length === 0 ? (
                       <div className="text-[11px] text-[var(--color-text-disabled)] text-center pt-2">
@@ -144,7 +164,7 @@ export function WeekView({ date, users, schedules, scheduleTypes }: Props) {
                             title={`${s.title}${s.caseNumber ? ` (${s.caseNumber})` : ""}`}
                           >
                             <span className="font-medium">
-                              {format(s.startAt, "HH:mm")}
+                              {formatJstTime(s.startAt)}
                             </span>{" "}
                             {s.title}
                           </button>

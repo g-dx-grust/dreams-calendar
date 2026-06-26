@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { differenceInMinutes, format } from "date-fns";
-import { ja } from "date-fns/locale";
+import { differenceInMinutes } from "date-fns";
 import { ChevronLeft } from "lucide-react";
 import { AppHeader } from "@/components/layout/app-header";
 import {
@@ -18,6 +17,11 @@ import {
 import { listProjectScheduleLogsByCaseAsync } from "@/lib/project-schedule-log-store";
 import { getSession } from "@/lib/session";
 import { getCurrentUserId } from "@/lib/self";
+import {
+  formatJstMonthDayLabel,
+  formatJstTime,
+  parseJstDate,
+} from "@/lib/jst";
 
 export const dynamic = "force-dynamic";
 
@@ -221,8 +225,8 @@ function ScheduleRow({
     <tr className="border-b border-[var(--color-border)] last:border-b-0 hover:bg-[var(--color-background)]">
       <Td>
         <span className="whitespace-nowrap">
-          {format(schedule.startAt, "M/d(EEE) HH:mm", { locale: ja })}〜
-          {format(schedule.endAt, "HH:mm")}
+          {formatJstMonthDayLabel(schedule.startAt)} {formatJstTime(schedule.startAt)}〜
+          {formatJstTime(schedule.endAt)}
         </span>
       </Td>
       <Td>
@@ -296,5 +300,6 @@ function formatMinutes(minutes: number) {
 }
 
 function formatDate(value: string) {
-  return format(new Date(`${value}T00:00`), "M/d(EEE)", { locale: ja });
+  const parsed = parseJstDate(value);
+  return parsed ? formatJstMonthDayLabel(parsed) : value;
 }

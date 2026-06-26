@@ -7,12 +7,17 @@
  * - 設定済みなら tenant token で IM API /im/v1/messages?receive_id_type=open_id に送信
  */
 
-import { format, isSameDay } from "date-fns";
-import { ja } from "date-fns/locale";
 import {
   postLarkApiWithTenantToken,
   toLarkApiError,
 } from "./provider-client";
+import {
+  formatJstSlashDate,
+  formatJstSlashDateTime,
+  formatJstTime,
+  isSameJstDay,
+  parseJstDate,
+} from "@/lib/jst";
 import type {
   CalendarUser,
   DailyReport,
@@ -53,9 +58,7 @@ export function listNotifications(): NotificationLogEntry[] {
 }
 
 function buildBody(schedule: Schedule, fromName?: string) {
-  const dt = format(schedule.startAt, "yyyy/MM/dd(EEE) HH:mm", {
-    locale: ja,
-  });
+  const dt = formatJstSlashDateTime(schedule.startAt);
   const head = fromName
     ? `${fromName} さんから予定に招待されました`
     : "予定に招待されました";
@@ -63,7 +66,7 @@ function buildBody(schedule: Schedule, fromName?: string) {
     head,
     "",
     `件名：${schedule.title}`,
-    `日時：${dt} 〜 ${format(schedule.endAt, "HH:mm")}`,
+    `日時：${dt} 〜 ${formatJstTime(schedule.endAt)}`,
     schedule.location ? `場所：${schedule.location}` : null,
     schedule.caseNumber ? `案件番号：${schedule.caseNumber}` : null,
   ]
@@ -93,13 +96,16 @@ function buildScheduleChangedBody(
 }
 
 function formatScheduleRange(schedule: Schedule) {
-  const start = format(schedule.startAt, "yyyy/MM/dd(EEE) HH:mm", {
-    locale: ja,
-  });
-  const end = isSameDay(schedule.startAt, schedule.endAt)
-    ? format(schedule.endAt, "HH:mm")
-    : format(schedule.endAt, "yyyy/MM/dd(EEE) HH:mm", { locale: ja });
+  const start = formatJstSlashDateTime(schedule.startAt);
+  const end = isSameJstDay(schedule.startAt, schedule.endAt)
+    ? formatJstTime(schedule.endAt)
+    : formatJstSlashDateTime(schedule.endAt);
   return `${start} 〜 ${end}`;
+}
+
+function formatReportDate(value: string) {
+  const parsed = parseJstDate(value);
+  return parsed ? formatJstSlashDate(parsed) : value;
 }
 
 async function postIm(
@@ -222,9 +228,7 @@ function buildDailyReportBody(
   reportUserName: string,
   reportUrl?: string,
 ): string {
-  const date = format(new Date(`${report.reportDate}T00:00`), "yyyy/MM/dd(EEE)", {
-    locale: ja,
-  });
+  const date = formatReportDate(report.reportDate);
   return [
     `【日報提出】${reportUserName} さん`,
     `対象日：${date}`,
@@ -241,9 +245,7 @@ function buildDailyReportCard(
   reportUserName: string,
   reportUrl: string,
 ) {
-  const date = format(new Date(`${report.reportDate}T00:00`), "yyyy/MM/dd(EEE)", {
-    locale: ja,
-  });
+  const date = formatReportDate(report.reportDate);
   return {
     config: { wide_screen_mode: true },
     header: {
@@ -333,9 +335,7 @@ function buildDailyReportReplyBody(
   reply: DailyReportReply,
   fromName: string,
 ): string {
-  const date = format(new Date(`${report.reportDate}T00:00`), "yyyy/MM/dd(EEE)", {
-    locale: ja,
-  });
+  const date = formatReportDate(report.reportDate);
   return [
     `【日報への返信】${fromName} さん`,
     `対象日：${date} の日報`,

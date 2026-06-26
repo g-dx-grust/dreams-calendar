@@ -4,8 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
-import { differenceInMinutes, format, isSameDay } from "date-fns";
-import { ja } from "date-fns/locale";
+import { differenceInMinutes } from "date-fns";
 import {
   CheckCircle2,
   Clock,
@@ -21,6 +20,14 @@ import {
   completeScheduleAction,
   deleteScheduleAction,
 } from "@/app/calendar/actions";
+import {
+  formatJstDate,
+  formatJstMonthDayLabel,
+  formatJstTime,
+  isSameJstDay,
+  parseJstDateTime,
+  toJstOffsetDateTime,
+} from "@/lib/jst";
 import { scheduleTypeBackground } from "./color-utils";
 
 const POPOVER_WIDTH = 360;
@@ -50,10 +57,10 @@ export function SchedulePopover({
   const [isCompletionOpen, setIsCompletionOpen] = useState(false);
   const defaultActualEndAt = schedule.actualEndAt ?? schedule.endAt;
   const [actualEndDate, setActualEndDate] = useState(
-    format(defaultActualEndAt, "yyyy-MM-dd"),
+    formatJstDate(defaultActualEndAt),
   );
   const [actualEndTime, setActualEndTime] = useState(
-    format(defaultActualEndAt, "HH:mm"),
+    formatJstTime(defaultActualEndAt),
   );
   const [actualMemo, setActualMemo] = useState(schedule.actualMemo ?? "");
   const [completionError, setCompletionError] = useState<string | null>(null);
@@ -101,9 +108,9 @@ export function SchedulePopover({
     };
   }, [onClose]);
 
-  const fmtTime = (d: Date) => format(d, "HH:mm");
-  const fmtDateLabel = (d: Date) => format(d, "M月d日(EEE)", { locale: ja });
-  const sameDay = isSameDay(schedule.startAt, schedule.endAt);
+  const fmtTime = (d: Date) => formatJstTime(d);
+  const fmtDateLabel = (d: Date) => formatJstMonthDayLabel(d);
+  const sameDay = isSameJstDay(schedule.startAt, schedule.endAt);
   const timeRange = sameDay
     ? `${fmtDateLabel(schedule.startAt)}　${fmtTime(schedule.startAt)} 〜 ${fmtTime(schedule.endAt)}`
     : `${fmtDateLabel(schedule.startAt)} ${fmtTime(schedule.startAt)} 〜 ${fmtDateLabel(schedule.endAt)} ${fmtTime(schedule.endAt)}`;
@@ -132,7 +139,12 @@ export function SchedulePopover({
     if (isCompleting) return;
     setCompletionError(null);
     const fd = new FormData();
-    fd.set("actualEndAt", `${actualEndDate}T${actualEndTime}`);
+    const actualEndAt = toJstOffsetDateTime(actualEndDate, actualEndTime);
+    if (!actualEndAt) {
+      setCompletionError("作業終了が不正です");
+      return;
+    }
+    fd.set("actualEndAt", actualEndAt);
     if (actualMemo.trim()) fd.set("actualMemo", actualMemo.trim());
 
     startComplete(async () => {
@@ -147,8 +159,8 @@ export function SchedulePopover({
   }
 
   const actualStartAt = schedule.actualStartAt ?? schedule.startAt;
-  const parsedActualEndAt = new Date(`${actualEndDate}T${actualEndTime}`);
-  const previewMinutes = Number.isNaN(parsedActualEndAt.getTime())
+  const parsedActualEndAt = parseJstDateTime(actualEndDate, actualEndTime);
+  const previewMinutes = !parsedActualEndAt
     ? null
     : differenceInMinutes(parsedActualEndAt, actualStartAt);
 

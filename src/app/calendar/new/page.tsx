@@ -1,9 +1,9 @@
-import { format } from "date-fns";
 import { getSession } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
 import { ScheduleForm } from "@/components/calendar/schedule-form";
 import { listScheduleTypesAsync, listUsersAsync } from "@/lib/schedule-store";
 import { getCurrentUserId } from "@/lib/self";
+import { formatJstDate } from "@/lib/jst";
 import { createScheduleAction } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ export default async function NewSchedulePage() {
   const selfUserId = await getCurrentUserId();
 
   // 初期値：今日の 9:00–10:00、自分が担当者
-  const today = format(new Date(), "yyyy-MM-dd");
+  const today = formatJstDate(new Date());
 
   return (
     <div className="min-h-screen flex flex-col">

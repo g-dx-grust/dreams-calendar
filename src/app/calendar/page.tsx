@@ -1,17 +1,10 @@
-import {
-  endOfMonth,
-  endOfWeek,
-  format,
-  isWithinInterval,
-  startOfDay,
-  startOfMonth,
-  startOfWeek,
-  endOfDay,
-} from "date-fns";
-import { ja } from "date-fns/locale";
 import { ClipboardList } from "lucide-react";
 import { getSession } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
+import {
+  ScheduleForm,
+  type ScheduleFormValues,
+} from "@/components/calendar/schedule-form";
 import { DayView } from "@/components/calendar/day-view";
 import {
   HOUR_WIDTH_PX,
@@ -39,8 +32,20 @@ import {
 import { getCalendarSettings } from "@/lib/calendar-settings-store";
 import { getVisibleUserIds } from "@/lib/calendar-user-pref";
 import { getCurrentUserId } from "@/lib/self";
+import {
+  addJstDays,
+  endExclusiveOfJstMonth,
+  formatJstDate,
+  formatJstShortDateTime,
+  formatJstTime,
+  parseJstDate,
+  startOfJstDay,
+  startOfJstMonth,
+  startOfJstWeek,
+} from "@/lib/jst";
 import { listReportsByDateAsync } from "@/lib/daily-report-store";
 import { listRepliesAsync } from "@/lib/daily-report-reply-store";
+import { createScheduleAction } from "./actions";
 import type {
   CalendarUser,
   DailyReport,
@@ -53,6 +58,10 @@ export const dynamic = "force-dynamic";
 type SearchParams = Promise<{
   view?: string;
   date?: string;
+  new?: string;
+  userId?: string;
+  start?: string;
+  end?: string;
 }>;
 
 function parseView(raw?: string): CalendarView {
@@ -61,9 +70,8 @@ function parseView(raw?: string): CalendarView {
 }
 
 function parseDate(raw?: string): Date {
-  if (!raw) return new Date();
-  const d = new Date(raw);
-  return isNaN(d.getTime()) ? new Date() : d;
+  const parsed = raw ? parseJstDate(raw) : null;
+  return parsed ?? startOfJstDay(new Date()) ?? new Date();
 }
 
 function filterByView(
@@ -71,18 +79,25 @@ function filterByView(
   date: Date,
   schedules: Schedule[],
 ): Schedule[] {
-  let interval: { start: Date; end: Date };
+  let interval: { start: Date; endExclusive: Date };
   if (view === "day") {
-    interval = { start: startOfDay(date), end: endOfDay(date) };
+    const start = startOfJstDay(date) ?? date;
+    interval = { start, endExclusive: addJstDays(start, 1) };
   } else if (view === "week") {
+    const start = startOfJstWeek(date);
     interval = {
-      start: startOfWeek(date, { weekStartsOn: 0 }),
-      end: endOfWeek(date, { weekStartsOn: 0 }),
+      start,
+      endExclusive: addJstDays(start, 7),
     };
   } else {
-    interval = { start: startOfMonth(date), end: endOfMonth(date) };
+    interval = {
+      start: startOfJstMonth(date),
+      endExclusive: endExclusiveOfJstMonth(date),
+    };
   }
-  return schedules.filter((s) => isWithinInterval(s.startAt, interval));
+  return schedules.filter(
+    (s) => s.startAt < interval.endExclusive && s.endAt > interval.start,
+  );
 }
 
 export default async function CalendarPage({
@@ -126,7 +141,7 @@ export default async function CalendarPage({
   const visibleUsers = allUsers.filter((u) => visibleUserIds.includes(u.id));
 
   // 日報マップ（日ビュー用）：表示日の日報を社員IDで引けるオブジェクトに整形
-  const reportDateStr = format(date, "yyyy-MM-dd");
+  const reportDateStr = formatJstDate(date);
   const reportsMap = await listReportsByDateAsync(reportDateStr);
   const reportsByUserId: Record<string, DailyReport | null> = {};
   const repliesByReportId: Record<string, DailyReportReply[]> = {};
@@ -157,6 +172,14 @@ export default async function CalendarPage({
   const reportUsers = canViewAllReports
     ? visibleUsers
     : visibleUsers.filter((user) => user.id === selfUserId);
+  const newScheduleDefaults = buildNewScheduleDefaults({
+    users: allUsers,
+    selfUserId,
+    date,
+    userId: sp.userId,
+    start: sp.start,
+    end: sp.end,
+  });
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -228,6 +251,115 @@ export default async function CalendarPage({
           )}
         </div>
       </main>
+      {sp.new === "1" ? (
+        <ScheduleFormModal
+          title="予定を新規登録する"
+          returnHref={calendarHref(view, date)}
+        >
+          <ScheduleForm
+            users={allUsers}
+            scheduleTypes={types}
+            defaultValues={newScheduleDefaults}
+            selfUserId={selfUserId}
+            initialUserIds={newScheduleDefaults.userIds}
+            submitLabel="登録する"
+            cancelHref={calendarHref(view, date)}
+            action={createScheduleAction}
+          />
+        </ScheduleFormModal>
+      ) : null}
+    </div>
+  );
+}
+
+function calendarHref(view: CalendarView, date: Date) {
+  return `/calendar?view=${view}&date=${formatJstDate(date)}`;
+}
+
+function normalizeTime(raw: string | undefined, fallback: string) {
+  if (!raw) return fallback;
+  return /^\d{2}:\d{2}$/.test(raw) ? raw : fallback;
+}
+
+function addOneHour(time: string) {
+  const [hour = "09", minute = "00"] = time.split(":");
+  const total = Number(hour) * 60 + Number(minute) + 60;
+  const next = Math.min(total, 23 * 60 + 45);
+  return `${String(Math.floor(next / 60)).padStart(2, "0")}:${String(
+    next % 60,
+  ).padStart(2, "0")}`;
+}
+
+function buildNewScheduleDefaults({
+  users,
+  selfUserId,
+  date,
+  userId,
+  start,
+  end,
+}: {
+  users: CalendarUser[];
+  selfUserId: string | null;
+  date: Date;
+  userId?: string;
+  start?: string;
+  end?: string;
+}): Partial<ScheduleFormValues> {
+  const selectedUserId =
+    userId && users.some((user) => user.id === userId)
+      ? userId
+      : selfUserId && users.some((user) => user.id === selfUserId)
+        ? selfUserId
+        : users[0]?.id;
+  const startTime = normalizeTime(start, "09:00");
+  return {
+    userIds: selectedUserId ? [selectedUserId] : [],
+    isAllDay: false,
+    startDate: formatJstDate(date),
+    endDate: formatJstDate(date),
+    startTime,
+    endTime: normalizeTime(end, addOneHour(startTime)),
+  };
+}
+
+function ScheduleFormModal({
+  title,
+  returnHref,
+  children,
+}: {
+  title: string;
+  returnHref: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="schedule-form-modal-title"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-text-strong)]/30 px-4 py-6"
+    >
+      <a
+        href={returnHref}
+        className="absolute inset-0"
+        aria-label="モーダルを閉じる"
+      />
+      <div className="relative max-h-[calc(100dvh-48px)] w-full max-w-[760px] overflow-auto rounded-[var(--radius-m)] border border-[var(--color-border)] bg-white">
+        <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
+          <h2
+            id="schedule-form-modal-title"
+            className="text-[16px] font-bold text-[var(--color-text-strong)]"
+          >
+            {title}
+          </h2>
+          <a
+            href={returnHref}
+            className="text-[13px] text-[var(--color-text-mid)] hover:text-[var(--color-text-strong)]"
+          >
+            閉じる
+          </a>
+        </div>
+        <div className="p-5">{children}</div>
+      </div>
     </div>
   );
 }
@@ -266,8 +398,7 @@ function SubmittedReportsPanel({
     ? completedSchedulesByUserId[currentUser.id] ?? []
     : [];
 
-  const fmtSubmittedAt = (d: Date) =>
-    format(d, "M/d(EEE) HH:mm", { locale: ja });
+  const fmtSubmittedAt = (d: Date) => formatJstShortDateTime(d);
 
   return (
     <section className="mt-5 bg-white border border-[var(--color-border)] rounded-[var(--radius-m)] overflow-hidden">
@@ -382,7 +513,7 @@ function buildReportDraftFromSchedules(schedules: Schedule[]): string | undefine
         ? `\n  作業メモ：${schedule.actualMemo}`
         : "";
       const actualEnd = schedule.actualEndAt ?? schedule.endAt;
-      return `・${format(schedule.startAt, "HH:mm")}〜${format(actualEnd, "HH:mm")} ${schedule.title}${casePart}${actualPart}${memoPart}`;
+      return `・${formatJstTime(schedule.startAt)}〜${formatJstTime(actualEnd)} ${schedule.title}${casePart}${actualPart}${memoPart}`;
     })
     .join("\n");
 }

@@ -10,6 +10,7 @@ import {
   getScheduleAsync,
   listUsersAsync,
   moveScheduleRowAsync,
+  ScheduleStoreError,
   updateScheduleAsync,
 } from "@/lib/schedule-store";
 import {
@@ -22,6 +23,15 @@ import { getCurrentUserId } from "@/lib/self";
 import type { Schedule } from "@/components/calendar/types";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
+
+function toActionError(error: unknown, fallback: string) {
+  if (error instanceof ScheduleStoreError) {
+    return error.message.includes("DBカラムが未適用")
+      ? error.message
+      : fallback;
+  }
+  return fallback;
+}
 
 const scheduleSchema = z
   .object({
@@ -188,7 +198,9 @@ export async function createScheduleAction(
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "入力エラー" };
   }
-  const created = await createScheduleAsync({
+  let created: Schedule;
+  try {
+    created = await createScheduleAsync({
     title: parsed.data.title,
     userIds: parsed.data.userIds,
     typeId: parsed.data.typeId,
@@ -215,7 +227,10 @@ export async function createScheduleAction(
     isAllDay: parsed.data.isAllDay ?? false,
     startAt: new Date(parsed.data.startAt),
     endAt: new Date(parsed.data.endAt),
-  });
+    });
+  } catch (error) {
+    return { ok: false, error: toActionError(error, "予定の登録に失敗しました。") };
+  }
   await syncProjectScheduleLogsAsync(created);
   const selfId = await getCurrentUserId();
   await notifyInvitees(created.userIds, created.id, selfId);
@@ -233,7 +248,9 @@ export async function updateScheduleAction(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "入力エラー" };
   }
   const before = await getScheduleAsync(id);
-  const updated = await updateScheduleAsync(id, {
+  let updated: Schedule | null;
+  try {
+    updated = await updateScheduleAsync(id, {
     title: parsed.data.title,
     userIds: parsed.data.userIds,
     typeId: parsed.data.typeId,
@@ -260,7 +277,10 @@ export async function updateScheduleAction(
     isAllDay: parsed.data.isAllDay ?? false,
     startAt: new Date(parsed.data.startAt),
     endAt: new Date(parsed.data.endAt),
-  });
+    });
+  } catch (error) {
+    return { ok: false, error: toActionError(error, "予定の更新に失敗しました。") };
+  }
   if (!updated) return { ok: false, error: "予定が見つかりませんでした" };
   await syncProjectScheduleLogsAsync(updated);
 
@@ -317,22 +337,26 @@ export async function moveScheduleAction(input: {
 
   // 行を変える場合は userIds を置換
   let updated = before;
-  if (parsed.data.fromUserId !== parsed.data.toUserId) {
-    updated = await moveScheduleRowAsync(
-      parsed.data.id,
-      parsed.data.fromUserId,
-      parsed.data.toUserId,
-    );
+  try {
+    if (parsed.data.fromUserId !== parsed.data.toUserId) {
+      updated = await moveScheduleRowAsync(
+        parsed.data.id,
+        parsed.data.fromUserId,
+        parsed.data.toUserId,
+      );
+    }
+    // 時刻のみ更新（または行更新後にさらに時刻を反映）
+    updated = await updateScheduleAsync(parsed.data.id, {
+      startAt: new Date(parsed.data.startAt),
+      endAt: new Date(parsed.data.endAt),
+      syncSource: "app",
+      syncStatus: "pending",
+      lastSyncedAt: null,
+      syncError: null,
+    });
+  } catch (error) {
+    return { ok: false, error: toActionError(error, "予定の移動に失敗しました。") };
   }
-  // 時刻のみ更新（または行更新後にさらに時刻を反映）
-  updated = await updateScheduleAsync(parsed.data.id, {
-    startAt: new Date(parsed.data.startAt),
-    endAt: new Date(parsed.data.endAt),
-    syncSource: "app",
-    syncStatus: "pending",
-    lastSyncedAt: null,
-    syncError: null,
-  });
   if (!updated) return { ok: false, error: "予定が見つかりませんでした" };
   await syncProjectScheduleLogsAsync(updated);
 
@@ -399,17 +423,22 @@ export async function completeScheduleAction(
     };
   }
 
-  const updated = await updateScheduleAsync(id, {
-    status: "done",
-    actualStartAt,
-    actualEndAt,
-    actualMinutes,
-    actualMemo: parsed.data.actualMemo || null,
-    syncSource: "app",
-    syncStatus: "pending",
-    lastSyncedAt: null,
-    syncError: null,
-  });
+  let updated: Schedule | null;
+  try {
+    updated = await updateScheduleAsync(id, {
+      status: "done",
+      actualStartAt,
+      actualEndAt,
+      actualMinutes,
+      actualMemo: parsed.data.actualMemo || null,
+      syncSource: "app",
+      syncStatus: "pending",
+      lastSyncedAt: null,
+      syncError: null,
+    });
+  } catch (error) {
+    return { ok: false, error: toActionError(error, "予定の完了に失敗しました。") };
+  }
   if (!updated) return { ok: false, error: "予定が見つかりませんでした" };
   await syncProjectScheduleLogsAsync(updated);
 

@@ -1,5 +1,10 @@
-import { differenceInMinutes, format, isSameDay } from "date-fns";
+import { differenceInMinutes } from "date-fns";
 import type { Schedule } from "./types";
+import {
+  formatJstShortDateTime,
+  formatJstTime,
+  isSameJstDay,
+} from "@/lib/jst";
 
 type Props = {
   schedules: Schedule[];
@@ -60,10 +65,10 @@ export function CompletedScheduleSummary({ schedules, emptyLabel }: Props) {
 }
 
 function formatTimeRange(startAt: Date, endAt: Date) {
-  if (isSameDay(startAt, endAt)) {
-    return `${format(startAt, "HH:mm")}〜${format(endAt, "HH:mm")}`;
+  if (isSameJstDay(startAt, endAt)) {
+    return `${formatJstTime(startAt)}〜${formatJstTime(endAt)}`;
   }
-  return `${format(startAt, "M/d HH:mm")}〜${format(endAt, "M/d HH:mm")}`;
+  return `${formatJstShortDateTime(startAt)}〜${formatJstShortDateTime(endAt)}`;
 }
 
 function actualMinutes(schedule: Schedule) {
