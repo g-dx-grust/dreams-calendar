@@ -205,7 +205,7 @@ export function listSchedules(): Schedule[] {
 
 export async function listSchedulesAsync(): Promise<Schedule[]> {
   const db = getSupabaseAdmin();
-  if (!db) return listSchedules();
+  if (!db) return [];
 
   const result = await db
     .from("schedules")
@@ -225,7 +225,7 @@ export async function listSchedulesAsync(): Promise<Schedule[]> {
     error = retry.error;
   }
 
-  if (error || !data) return listSchedules();
+  if (error || !data) return [];
   return (data as ScheduleRow[]).map(hydrateRow);
 }
 

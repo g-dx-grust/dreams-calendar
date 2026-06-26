@@ -22,11 +22,8 @@ import { DailyReportCell } from "@/components/calendar/daily-report-cell";
 import { DailyReportThread } from "@/components/calendar/daily-report-thread";
 import { CompletedScheduleSummary } from "@/components/calendar/completed-schedule-summary";
 import {
-  listSchedules,
   listSchedulesAsync,
-  listScheduleTypes,
   listScheduleTypesAsync,
-  listUsers,
   listUsersAsync,
 } from "@/lib/schedule-store";
 import { getCalendarSettings } from "@/lib/calendar-settings-store";
@@ -110,21 +107,12 @@ export default async function CalendarPage({
   const date = parseDate(sp.date);
 
   const session = await getSession();
-  let allUsers = await listUsersAsync();
-  let types = await listScheduleTypesAsync();
-  let all = await listSchedulesAsync();
-  const dataMode = all.length === 0 ? "mock" : "database";
-  if (dataMode === "mock") {
-    allUsers = listUsers();
-    types = listScheduleTypes();
-    all = listSchedules();
-  }
+  const allUsers = await listUsersAsync();
+  const types = await listScheduleTypesAsync();
+  const all = await listSchedulesAsync();
   const schedules = filterByView(view, date, all);
   const { startHour, endHour } = getCalendarSettings();
-  let selfUserId = await getCurrentUserId();
-  if (dataMode === "mock" && !allUsers.some((u) => u.id === selfUserId)) {
-    selfUserId = allUsers[0]?.id ?? null;
-  }
+  const selfUserId = await getCurrentUserId();
   const currentUser = selfUserId
     ? allUsers.find((user) => user.id === selfUserId)
     : null;
@@ -194,7 +182,7 @@ export default async function CalendarPage({
           className="mx-auto"
           style={{ maxWidth: "var(--width-calendar-max)" }}
         >
-          <CalendarHeader view={view} date={date} dataMode={dataMode} />
+          <CalendarHeader view={view} date={date} />
 
           {view !== "month" ? (
             <div className="mb-3">

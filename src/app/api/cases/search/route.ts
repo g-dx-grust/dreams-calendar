@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { MOCK_CASES } from "@/components/calendar/mock-data";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -26,16 +25,6 @@ type CasePersonRow = {
 
 function normalizeBaseUrl(raw: string): string {
   return raw.replace(/\/+$/, "");
-}
-
-function searchMockCases(query: string): CaseSearchItem[] {
-  const keyword = query.toLowerCase();
-  return MOCK_CASES.filter((item) => {
-    return (
-      item.caseNumber.toLowerCase().includes(keyword) ||
-      item.caseName.toLowerCase().includes(keyword)
-    );
-  }).slice(0, 10);
 }
 
 function toPattern(query: string): string {
@@ -171,7 +160,7 @@ export async function GET(request: Request) {
   const baseUrl =
     process.env.KANRI_SYSTEM_URL ?? process.env.NEXT_PUBLIC_KANRI_SYSTEM_URL;
   if (!baseUrl) {
-    return NextResponse.json({ items: searchMockCases(query) });
+    return NextResponse.json({ items: [] satisfies CaseSearchItem[] });
   }
 
   const url = new URL("/api/cases/search", normalizeBaseUrl(baseUrl));
@@ -197,10 +186,6 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ items: normalizeItems(payload) });
   } catch {
-    if (process.env.NODE_ENV !== "production") {
-      return NextResponse.json({ items: searchMockCases(query) });
-    }
-
     return NextResponse.json(
       { items: [] satisfies CaseSearchItem[], error: "案件検索に失敗しました。" },
       { status: 502 },

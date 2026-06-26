@@ -42,7 +42,7 @@ export function listScheduleTypes(): ScheduleType[] {
 
 export async function listScheduleTypesAsync(): Promise<ScheduleType[]> {
   const db = getSupabaseAdmin();
-  if (!db) return listScheduleTypes();
+  if (!db) return [];
 
   const { data, error } = await db
     .from("schedule_types")
@@ -51,7 +51,7 @@ export async function listScheduleTypesAsync(): Promise<ScheduleType[]> {
     .order("sort_order", { ascending: true })
     .order("name", { ascending: true });
 
-  if (error || !data) return listScheduleTypes();
+  if (error || !data) return [];
   const rows = data as ScheduleTypeRow[];
   return rows.map(mapScheduleTypeRow);
 }

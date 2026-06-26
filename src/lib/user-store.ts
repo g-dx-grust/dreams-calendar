@@ -55,7 +55,7 @@ export function listUsers(): CalendarUser[] {
 
 export async function listUsersAsync(): Promise<CalendarUser[]> {
   const db = getSupabaseAdmin();
-  if (!db) return listUsers();
+  if (!db) return [];
 
   const rich = await db
     .from("users")
@@ -73,7 +73,7 @@ export async function listUsersAsync(): Promise<CalendarUser[]> {
     .eq("is_active", true)
     .order("full_name", { ascending: true });
 
-  if (fallback.error || !fallback.data) return listUsers();
+  if (fallback.error || !fallback.data) return [];
   const rows = fallback.data as UserRow[];
   return withCalendarProfiles(rows.map(mapUserRow));
 }

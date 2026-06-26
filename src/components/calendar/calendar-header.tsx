@@ -21,7 +21,6 @@ export type CalendarView = "day" | "week" | "month";
 type Props = {
   view: CalendarView;
   date: Date;
-  dataMode?: "database" | "mock";
 };
 
 const VIEWS: { key: CalendarView; label: string }[] = [
@@ -56,7 +55,7 @@ function buildUrl(view: CalendarView, date: Date) {
   return `/calendar?view=${view}&date=${fmtDate(date)}`;
 }
 
-export function CalendarHeader({ view, date, dataMode = "database" }: Props) {
+export function CalendarHeader({ view, date }: Props) {
   const router = useRouter();
   const today = new Date();
 
@@ -67,7 +66,7 @@ export function CalendarHeader({ view, date, dataMode = "database" }: Props) {
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-[22px] font-bold leading-tight text-[var(--color-text-strong)]">
-            {periodTitle(view, date)}
+              {periodTitle(view, date)}
             </h1>
             <Link
               href={buildUrl(view, today)}
@@ -76,11 +75,6 @@ export function CalendarHeader({ view, date, dataMode = "database" }: Props) {
               今日
             </Link>
           </div>
-          {dataMode === "mock" ? (
-            <p className="mt-1 text-[12px] text-[var(--color-text-weak)]">
-              モックデータを表示中（予定データ未登録）
-            </p>
-          ) : null}
         </div>
         <Link
           href={`${buildUrl(view, date)}&new=1`}

@@ -38,10 +38,16 @@ export async function getSupabaseServer() {
   });
 }
 
+export function hasSupabaseAdminConfig() {
+  return Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY,
+  );
+}
+
 export function getSupabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceRoleKey) return null;
+  if (!hasSupabaseAdminConfig()) return null;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
   return createClient(url, serviceRoleKey, {
     auth: {
       persistSession: false,
