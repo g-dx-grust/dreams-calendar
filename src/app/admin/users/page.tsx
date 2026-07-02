@@ -2,26 +2,19 @@ import { getSession } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
 import { AdminNav } from "@/components/admin/admin-nav";
 import { listUsersAsync } from "@/lib/user-store";
-import { listSchedulesAsync } from "@/lib/schedule-store";
+import { countSchedulesByUserAsync } from "@/lib/schedule-store";
 
 export const dynamic = "force-dynamic";
 
 // 社員は kanri-system / Lark 連携で管理する共有データ（CLAUDE.md §D）。
 // 本画面は参照専用。追加・編集・削除は kanri-system 側で行う。
 export default async function UsersAdminPage() {
-  const session = await getSession();
-  const [users, schedules] = await Promise.all([
-    listUsersAsync(),
-    listSchedulesAsync(),
-  ]);
-
   // 各社員に紐づく予定数（参照件数：担当者の何れかとして含まれる予定）
-  const usageCount = new Map<string, number>();
-  for (const s of schedules) {
-    for (const uid of s.userIds) {
-      usageCount.set(uid, (usageCount.get(uid) ?? 0) + 1);
-    }
-  }
+  const [session, users, usageCount] = await Promise.all([
+    getSession(),
+    listUsersAsync(),
+    countSchedulesByUserAsync(),
+  ]);
 
   return (
     <div className="min-h-screen flex flex-col">

@@ -79,6 +79,47 @@ export async function listRepliesAsync(
   return (data as CommentRow[]).map(hydrateRow);
 }
 
+/*
+ * 複数日報の返信を1クエリでまとめて取得する（日表示のN+1対策）。
+ * 戻り値は reportId ごとの投稿時刻昇順。
+ */
+export async function listRepliesByReportIdsAsync(
+  reportIds: string[],
+): Promise<Map<string, DailyReportReply[]>> {
+  const result = new Map<string, DailyReportReply[]>();
+  if (reportIds.length === 0) return result;
+
+  const db = getSupabaseAdmin();
+  if (!db) {
+    for (const reportId of reportIds) {
+      result.set(reportId, listReplies(reportId));
+    }
+    return result;
+  }
+
+  const { data, error } = await db
+    .from("comments")
+    .select("id,target_id,user_id,body,created_at,updated_at")
+    .eq("target_type", "daily_report")
+    .in("target_id", reportIds)
+    .order("created_at", { ascending: true });
+
+  if (error || !data) {
+    for (const reportId of reportIds) {
+      result.set(reportId, listReplies(reportId));
+    }
+    return result;
+  }
+
+  for (const row of data as CommentRow[]) {
+    const reply = hydrateRow(row);
+    const existing = result.get(reply.reportId);
+    if (existing) existing.push(reply);
+    else result.set(reply.reportId, [reply]);
+  }
+  return result;
+}
+
 export function getReply(replyId: string): DailyReportReply | null {
   const found = getStore().find((r) => r.id === replyId);
   return found ? hydrate(found) : null;

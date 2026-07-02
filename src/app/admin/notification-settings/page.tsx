@@ -2,23 +2,25 @@ import { CheckCircle2 } from "lucide-react";
 import { getSession } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
 import { AdminNav } from "@/components/admin/admin-nav";
-import { CalendarSettingsForm } from "@/components/admin/calendar-settings-form";
-import { getCalendarSettingsAsync } from "@/lib/calendar-settings-store";
-import { updateCalendarSettingsAction } from "./actions";
+import { NotificationSettingsForm } from "@/components/admin/notification-settings-form";
+import { getNotificationSettingsAsync } from "@/lib/calendar-settings-store";
+import { listBotChatsAsync } from "@/lib/lark/chats";
+import { updateNotificationSettingsAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 type SearchParams = Promise<{ saved?: string }>;
 
-export default async function CalendarSettingsPage({
+export default async function NotificationSettingsPage({
   searchParams,
 }: {
   searchParams: SearchParams;
 }) {
   const sp = await searchParams;
-  const [session, settings] = await Promise.all([
+  const [session, settings, botChats] = await Promise.all([
     getSession(),
-    getCalendarSettingsAsync(),
+    getNotificationSettingsAsync(),
+    listBotChatsAsync(),
   ]);
 
   return (
@@ -32,15 +34,15 @@ export default async function CalendarSettingsPage({
           <h1 className="text-[18px] font-bold text-[var(--color-text-strong)] mb-4">
             管理画面
           </h1>
-          <AdminNav active="/admin/calendar-settings" />
+          <AdminNav active="/admin/notification-settings" />
 
           <h2 className="text-[16px] font-bold text-[var(--color-text-strong)] mb-3">
-            カレンダー表示時間帯
+            Lark通知設定
           </h2>
           <p className="text-[13px] text-[var(--color-text-mid)] mb-4">
-            日表示カレンダーの時間軸の範囲を設定します。
+            日報が提出されたときに通知を送るLarkグループチャットを設定します。
             <br />
-            例：08:00 〜 18:00 のみ表示する／00:00 〜 24:00 を 1 日全体表示する 等。
+            設定はデータベースに保存され、即時反映されます。
           </p>
 
           {sp.saved ? (
@@ -54,13 +56,16 @@ export default async function CalendarSettingsPage({
           ) : null}
 
           <div className="max-w-[640px] bg-white border border-[var(--color-border)] rounded-[var(--radius-m)] p-6">
-            <CalendarSettingsForm
+            <NotificationSettingsForm
               defaultValues={{
-                startHour: settings.startHour,
-                endHour: settings.endHour,
+                dailyReportChatId: settings.dailyReportChatId ?? "",
+                dailyReportChatName: settings.dailyReportChatName ?? "",
+                dailyReportDmAdmins: settings.dailyReportDmAdmins,
               }}
+              botChats={botChats.ok ? botChats.chats : []}
+              botChatsError={botChats.ok ? null : botChats.reason}
               cancelHref="/admin"
-              action={updateCalendarSettingsAction}
+              action={updateNotificationSettingsAction}
             />
           </div>
         </div>

@@ -96,6 +96,17 @@ export async function postLarkApiWithTenantToken<T>(
   return requestLarkApi<T>("POST", token.data, path, body, params);
 }
 
+export async function getLarkApiWithTenantToken<T>(
+  path: string,
+  params?: Record<string, string | number | boolean | null | undefined>,
+): Promise<T> {
+  const token = await getLarkTenantAccessToken();
+  if (!token.ok) {
+    throw new LarkApiError(token.status, "lark_tenant_token_error", token.error);
+  }
+  return requestLarkApi<T>("GET", token.data, path, undefined, params);
+}
+
 export async function postLarkApiWithUserAccessToken<T>(
   userAccessToken: string,
   path: string,
@@ -185,7 +196,7 @@ async function requestLarkToken(
 }
 
 async function requestLarkApi<T>(
-  method: "POST",
+  method: "POST" | "GET",
   token: string,
   path: string,
   body: unknown,
@@ -204,7 +215,7 @@ async function requestLarkApi<T>(
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json; charset=utf-8",
     },
-    body: JSON.stringify(body),
+    ...(method === "GET" ? {} : { body: JSON.stringify(body) }),
     cache: "no-store",
   }).catch(() => null);
 

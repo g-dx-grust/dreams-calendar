@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
+import { after } from "next/server";
 import { z } from "zod";
 import {
   getReportAsync,
@@ -18,7 +19,9 @@ import { getUserAsync, listUsersAsync } from "@/lib/user-store";
 import {
   sendDailyReportReply,
   sendDailyReportSubmitted,
+  sendDailyReportToChat,
 } from "@/lib/lark/notify";
+import { getNotificationSettingsAsync } from "@/lib/calendar-settings-store";
 import type { DailyReportReply } from "@/components/calendar/types";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -81,25 +84,50 @@ export async function submitDailyReportAction(
     parsed.data.body,
   );
 
-  const users = await listUsersAsync();
-  const reportUser = users.find((u) => u.id === parsed.data.userId);
-  const adminUsers = users.filter((u) => u.isAdmin || u.role === "admin");
-  const recipients =
-    adminUsers.length > 0 ? adminUsers : reportUser ? [reportUser] : [];
-  if (reportUser && recipients.length > 0) {
-    const url = await buildDailyReportUrl(
-      parsed.data.reportDate,
-      parsed.data.userId,
-    );
-    const results = await Promise.all(
-      recipients.map((recipient) =>
-        sendDailyReportSubmitted(recipient, report, reportUser.name, url),
-      ),
-    );
-    if (results.some((result) => result.ok)) {
-      await markReportLarkNotifiedAsync(report.id);
+  // 通知は画面応答をブロックしないよう after で送信する（Lark連携ルール §4.2）
+  const url = await buildDailyReportUrl(
+    parsed.data.reportDate,
+    parsed.data.userId,
+  );
+  after(async () => {
+    try {
+      const [settings, users] = await Promise.all([
+        getNotificationSettingsAsync(),
+        listUsersAsync(),
+      ]);
+      const reportUser = users.find((u) => u.id === parsed.data.userId);
+      if (!reportUser) return;
+
+      const results = [];
+      if (settings.dailyReportChatId) {
+        results.push(
+          await sendDailyReportToChat(
+            settings.dailyReportChatId,
+            settings.dailyReportChatName ?? "日報通知チャット",
+            report,
+            reportUser.name,
+            url,
+          ),
+        );
+      }
+      if (!settings.dailyReportChatId || settings.dailyReportDmAdmins) {
+        const adminUsers = users.filter((u) => u.isAdmin || u.role === "admin");
+        const recipients = adminUsers.length > 0 ? adminUsers : [reportUser];
+        results.push(
+          ...(await Promise.all(
+            recipients.map((recipient) =>
+              sendDailyReportSubmitted(recipient, report, reportUser.name, url),
+            ),
+          )),
+        );
+      }
+      if (results.some((result) => result.ok)) {
+        await markReportLarkNotifiedAsync(report.id);
+      }
+    } catch (error) {
+      console.error("[daily-report] notification failed", error);
     }
-  }
+  });
 
   revalidatePath("/calendar");
   return { ok: true };
@@ -148,11 +176,19 @@ export async function postDailyReportReplyAction(
     parsed.data.body,
   );
 
-  const reportAuthor = await getUserAsync(parsed.data.reportUserId);
-  const replyAuthor = await getUserAsync(parsed.data.authorUserId);
-  if (reportAuthor && replyAuthor) {
-    await sendDailyReportReply(reportAuthor, report, reply, replyAuthor.name);
-  }
+  after(async () => {
+    try {
+      const [reportAuthor, replyAuthor] = await Promise.all([
+        getUserAsync(parsed.data.reportUserId),
+        getUserAsync(parsed.data.authorUserId),
+      ]);
+      if (reportAuthor && replyAuthor) {
+        await sendDailyReportReply(reportAuthor, report, reply, replyAuthor.name);
+      }
+    } catch (error) {
+      console.error("[daily-report] reply notification failed", error);
+    }
+  });
 
   revalidatePath("/calendar");
   return { ok: true, reply: serializeReply(reply) };

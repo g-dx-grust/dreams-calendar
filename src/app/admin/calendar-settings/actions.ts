@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { updateCalendarSettings } from "@/lib/calendar-settings-store";
+import { getSession } from "@/lib/session";
+import { updateCalendarSettingsAsync } from "@/lib/calendar-settings-store";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -28,6 +29,14 @@ const settingsSchema = z
 export async function updateCalendarSettingsAction(
   formData: FormData,
 ): Promise<ActionResult> {
+  const session = await getSession();
+  if (!session || session.role !== "admin") {
+    return {
+      ok: false,
+      error: "この操作には管理者権限が必要です。管理者アカウントでログインし直してください。",
+    };
+  }
+
   const parsed = settingsSchema.safeParse({
     startHour: formData.get("startHour"),
     endHour: formData.get("endHour"),
@@ -35,7 +44,7 @@ export async function updateCalendarSettingsAction(
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "入力エラー" };
   }
-  updateCalendarSettings(parsed.data);
+  await updateCalendarSettingsAsync(parsed.data, session.userId ?? null);
   revalidatePath("/calendar");
   revalidatePath("/admin/calendar-settings");
   redirect("/admin/calendar-settings?saved=1");

@@ -22,11 +22,11 @@ import { DailyReportCell } from "@/components/calendar/daily-report-cell";
 import { DailyReportThread } from "@/components/calendar/daily-report-thread";
 import { CompletedScheduleSummary } from "@/components/calendar/completed-schedule-summary";
 import {
-  listSchedulesAsync,
+  listSchedulesInRangeAsync,
   listScheduleTypesAsync,
   listUsersAsync,
 } from "@/lib/schedule-store";
-import { getCalendarSettings } from "@/lib/calendar-settings-store";
+import { getCalendarSettingsAsync } from "@/lib/calendar-settings-store";
 import { getVisibleUserIds } from "@/lib/calendar-user-pref";
 import { getCurrentUserId } from "@/lib/self";
 import {
@@ -41,7 +41,7 @@ import {
   startOfJstWeek,
 } from "@/lib/jst";
 import { listReportsByDateAsync } from "@/lib/daily-report-store";
-import { listRepliesAsync } from "@/lib/daily-report-reply-store";
+import { listRepliesByReportIdsAsync } from "@/lib/daily-report-reply-store";
 import { createScheduleAction } from "./actions";
 import type {
   CalendarUser,
@@ -71,30 +71,22 @@ function parseDate(raw?: string): Date {
   return parsed ?? startOfJstDay(new Date()) ?? new Date();
 }
 
-function filterByView(
+function viewInterval(
   view: CalendarView,
   date: Date,
-  schedules: Schedule[],
-): Schedule[] {
-  let interval: { start: Date; endExclusive: Date };
+): { start: Date; endExclusive: Date } {
   if (view === "day") {
     const start = startOfJstDay(date) ?? date;
-    interval = { start, endExclusive: addJstDays(start, 1) };
-  } else if (view === "week") {
-    const start = startOfJstWeek(date);
-    interval = {
-      start,
-      endExclusive: addJstDays(start, 7),
-    };
-  } else {
-    interval = {
-      start: startOfJstMonth(date),
-      endExclusive: endExclusiveOfJstMonth(date),
-    };
+    return { start, endExclusive: addJstDays(start, 1) };
   }
-  return schedules.filter(
-    (s) => s.startAt < interval.endExclusive && s.endAt > interval.start,
-  );
+  if (view === "week") {
+    const start = startOfJstWeek(date);
+    return { start, endExclusive: addJstDays(start, 7) };
+  }
+  return {
+    start: startOfJstMonth(date),
+    endExclusive: endExclusiveOfJstMonth(date),
+  };
 }
 
 export default async function CalendarPage({
@@ -106,13 +98,16 @@ export default async function CalendarPage({
   const view = parseView(sp.view);
   const date = parseDate(sp.date);
 
-  const session = await getSession();
-  const allUsers = await listUsersAsync();
-  const types = await listScheduleTypesAsync();
-  const all = await listSchedulesAsync();
-  const schedules = filterByView(view, date, all);
-  const { startHour, endHour } = getCalendarSettings();
-  const selfUserId = await getCurrentUserId();
+  const interval = viewInterval(view, date);
+  const [session, allUsers, types, schedules, { startHour, endHour }, selfUserId] =
+    await Promise.all([
+      getSession(),
+      listUsersAsync(),
+      listScheduleTypesAsync(),
+      listSchedulesInRangeAsync(interval.start, interval.endExclusive),
+      getCalendarSettingsAsync(),
+      getCurrentUserId(),
+    ]);
   const currentUser = selfUserId
     ? allUsers.find((user) => user.id === selfUserId)
     : null;
@@ -132,7 +127,6 @@ export default async function CalendarPage({
   const reportDateStr = formatJstDate(date);
   const reportsMap = await listReportsByDateAsync(reportDateStr);
   const reportsByUserId: Record<string, DailyReport | null> = {};
-  const repliesByReportId: Record<string, DailyReportReply[]> = {};
   const completedSchedulesByUserId: Record<string, Schedule[]> = {};
   for (const u of visibleUsers) {
     const canReadReport = canViewAllReports || u.id === selfUserId;
@@ -142,20 +136,23 @@ export default async function CalendarPage({
       (schedule) =>
         schedule.status === "done" && schedule.userIds.includes(u.id),
     );
-    if (r && canReadReport) {
-      repliesByReportId[r.id] = await listRepliesAsync(r.id);
-    }
   }
   if (currentUser && !Object.hasOwn(reportsByUserId, currentUser.id)) {
-    const r = reportsMap.get(currentUser.id) ?? null;
-    reportsByUserId[currentUser.id] = r;
+    reportsByUserId[currentUser.id] = reportsMap.get(currentUser.id) ?? null;
     completedSchedulesByUserId[currentUser.id] = schedules.filter(
       (schedule) =>
         schedule.status === "done" && schedule.userIds.includes(currentUser.id),
     );
-    if (r) {
-      repliesByReportId[r.id] = await listRepliesAsync(r.id);
-    }
+  }
+
+  // 返信は日報単位ではなく1クエリでまとめて取得する（N+1対策）
+  const visibleReportIds = Object.values(reportsByUserId)
+    .filter((report): report is DailyReport => report !== null)
+    .map((report) => report.id);
+  const repliesMap = await listRepliesByReportIdsAsync(visibleReportIds);
+  const repliesByReportId: Record<string, DailyReportReply[]> = {};
+  for (const reportId of visibleReportIds) {
+    repliesByReportId[reportId] = repliesMap.get(reportId) ?? [];
   }
   const reportUsers = canViewAllReports
     ? visibleUsers

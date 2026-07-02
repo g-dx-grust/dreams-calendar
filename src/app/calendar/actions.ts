@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { differenceInMinutes } from "date-fns";
 import { z } from "zod";
 import {
@@ -138,12 +139,14 @@ async function notifyInvitees(
   fromUserId: string | null,
 ) {
   if (newlyAddedIds.length === 0) return;
-  const users = await listUsersAsync();
+  const [users, schedule] = await Promise.all([
+    listUsersAsync(),
+    getScheduleAsync(scheduleId),
+  ]);
+  if (!schedule) return;
   const fromUser = fromUserId
     ? users.find((u) => u.id === fromUserId) ?? null
     : null;
-  const schedule = await getScheduleAsync(scheduleId);
-  if (!schedule) return;
   const fromName = fromUser?.name;
 
   await Promise.all(
@@ -159,8 +162,8 @@ async function notifyInvitees(
 
 async function notifyScheduleChanged(
   recipientIds: string[],
-  before: Schedule,
-  after: Schedule,
+  beforeSchedule: Schedule,
+  afterSchedule: Schedule,
   fromUserId: string | null,
 ) {
   if (recipientIds.length === 0) return;
@@ -175,9 +178,46 @@ async function notifyScheduleChanged(
       if (id === fromUserId) return;
       const target = users.find((u) => u.id === id);
       if (!target) return;
-      await sendScheduleChanged(target, before, after, fromName);
+      await sendScheduleChanged(target, beforeSchedule, afterSchedule, fromName);
     }),
   );
+}
+
+// Lark通知は画面応答をブロックしないよう after で送信する（Lark連携ルール §4.2）
+function notifyInviteesInBackground(
+  newlyAddedIds: string[],
+  scheduleId: string,
+  fromUserId: string | null,
+) {
+  if (newlyAddedIds.length === 0) return;
+  after(async () => {
+    try {
+      await notifyInvitees(newlyAddedIds, scheduleId, fromUserId);
+    } catch (error) {
+      console.error("[calendar] invitation notification failed", error);
+    }
+  });
+}
+
+function notifyScheduleChangedInBackground(
+  recipientIds: string[],
+  beforeSchedule: Schedule,
+  afterSchedule: Schedule,
+  fromUserId: string | null,
+) {
+  if (recipientIds.length === 0) return;
+  after(async () => {
+    try {
+      await notifyScheduleChanged(
+        recipientIds,
+        beforeSchedule,
+        afterSchedule,
+        fromUserId,
+      );
+    } catch (error) {
+      console.error("[calendar] schedule change notification failed", error);
+    }
+  });
 }
 
 function didScheduleTimeChange(
@@ -233,7 +273,7 @@ export async function createScheduleAction(
   }
   await syncProjectScheduleLogsAsync(created);
   const selfId = await getCurrentUserId();
-  await notifyInvitees(created.userIds, created.id, selfId);
+  notifyInviteesInBackground(created.userIds, created.id, selfId);
   revalidatePath("/calendar");
   if (created.caseId) revalidatePath(`/calendar/cases/${created.caseId}`);
   redirect("/calendar");
@@ -287,12 +327,12 @@ export async function updateScheduleAction(
   const beforeIds = new Set(before?.userIds ?? []);
   const newlyAdded = updated.userIds.filter((u) => !beforeIds.has(u));
   const selfId = await getCurrentUserId();
-  await notifyInvitees(newlyAdded, updated.id, selfId);
+  notifyInviteesInBackground(newlyAdded, updated.id, selfId);
   if (before && didScheduleTimeChange(before, updated)) {
     const existingRecipients = updated.userIds.filter(
       (id) => beforeIds.has(id) && !newlyAdded.includes(id),
     );
-    await notifyScheduleChanged(existingRecipients, before, updated, selfId);
+    notifyScheduleChangedInBackground(existingRecipients, before, updated, selfId);
   }
 
   revalidatePath("/calendar");
@@ -363,12 +403,12 @@ export async function moveScheduleAction(input: {
   // 行変更で新規担当になったユーザーがいれば通知
   const newlyAdded = updated.userIds.filter((u) => !beforeIds.has(u));
   const selfId = await getCurrentUserId();
-  await notifyInvitees(newlyAdded, updated.id, selfId);
+  notifyInviteesInBackground(newlyAdded, updated.id, selfId);
   if (before && didScheduleTimeChange(before, updated)) {
     const existingRecipients = updated.userIds.filter(
       (id) => beforeIds.has(id) && !newlyAdded.includes(id),
     );
-    await notifyScheduleChanged(existingRecipients, before, updated, selfId);
+    notifyScheduleChangedInBackground(existingRecipients, before, updated, selfId);
   }
 
   revalidatePath("/calendar");

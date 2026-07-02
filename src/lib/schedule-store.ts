@@ -229,6 +229,66 @@ export async function listSchedulesAsync(): Promise<Schedule[]> {
   return (data as ScheduleRow[]).map(hydrateRow);
 }
 
+/*
+ * 社員ごとの関連予定数を軽量カラムのみで集計する（社員マスタ画面用）。
+ */
+export async function countSchedulesByUserAsync(): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  const db = getSupabaseAdmin();
+  if (!db) return counts;
+
+  const { data, error } = await db
+    .from("schedules")
+    .select("user_id, co_user_ids")
+    .is("deleted_at", null);
+  if (error || !data) return counts;
+
+  for (const row of data as Array<{ user_id: string | null; co_user_ids: string[] | null }>) {
+    const ids = new Set<string>();
+    if (row.user_id) ids.add(row.user_id);
+    for (const id of row.co_user_ids ?? []) ids.add(id);
+    for (const id of ids) counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/*
+ * 表示期間に重なる予定だけをDB側で絞り込んで取得する。
+ * カレンダー画面は全件取得ではなくこちらを使う（データ増加時の速度対策）。
+ */
+export async function listSchedulesInRangeAsync(
+  start: Date,
+  endExclusive: Date,
+): Promise<Schedule[]> {
+  const db = getSupabaseAdmin();
+  if (!db) return [];
+
+  const result = await db
+    .from("schedules")
+    .select(SCHEDULE_SELECT)
+    .is("deleted_at", null)
+    .lt("start_at", endExclusive.toISOString())
+    .gt("end_at", start.toISOString())
+    .order("start_at", { ascending: true });
+  let data: unknown = result.data;
+  let error = result.error;
+
+  if (isUndefinedColumnError(error)) {
+    const retry = await db
+      .from("schedules")
+      .select(SCHEDULE_BASE_SELECT)
+      .is("deleted_at", null)
+      .lt("start_at", endExclusive.toISOString())
+      .gt("end_at", start.toISOString())
+      .order("start_at", { ascending: true });
+    data = retry.data;
+    error = retry.error;
+  }
+
+  if (error || !data) return [];
+  return (data as ScheduleRow[]).map(hydrateRow);
+}
+
 export function getSchedule(id: string): Schedule | null {
   const found = getStore().find((s) => s.id === id);
   return found ? hydrate(found) : null;

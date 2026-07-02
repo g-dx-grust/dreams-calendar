@@ -1,16 +1,17 @@
 /*
- * Lark IM 通知（招待）
+ * Lark IM 通知（予定招待・予定変更・日報）
  * see: ../../G-DX_Lark_Integration_Rules.md §4
  *
- * - 環境変数（LARK_APP_ID/LARK_APP_SECRET）が未設定 or 受信者の larkOpenId がない場合は
- *   コンソールログのみ（DB 接続前の暫定実装）
- * - 設定済みなら tenant token で IM API /im/v1/messages?receive_id_type=open_id に送信
+ * - 送信は tenant token で /im/v1/messages を使用
+ * - 個人宛は open_id、グループ宛は chat_id（管理画面で設定）
+ * - 送信結果は calendar_notification_logs に記録し、失敗分はリトライする
+ *   （実装は notification-log-store.ts）
  */
 
 import {
-  postLarkApiWithTenantToken,
-  toLarkApiError,
-} from "./provider-client";
+  dispatchNotification,
+  type DispatchResult,
+} from "@/lib/notification-log-store";
 import {
   formatJstSlashDate,
   formatJstSlashDateTime,
@@ -25,37 +26,9 @@ import type {
   Schedule,
 } from "@/components/calendar/types";
 
-type NotifyResult = { ok: true } | { ok: false; reason: string };
+export type NotifyResult = DispatchResult;
 
-declare global {
-  var __gdxNotificationLog: NotificationLogEntry[] | undefined;
-}
-
-export type NotificationLogEntry = {
-  at: string;
-  to: { id: string; name: string };
-  scheduleId: string;
-  title: string;
-  delivered: boolean;
-  reason?: string;
-  kind?:
-    | "invitation"
-    | "schedule_changed"
-    | "daily_report"
-    | "daily_report_reply";
-};
-
-function logEntry(e: NotificationLogEntry) {
-  if (!globalThis.__gdxNotificationLog) globalThis.__gdxNotificationLog = [];
-  globalThis.__gdxNotificationLog.unshift(e);
-  if (globalThis.__gdxNotificationLog.length > 100) {
-    globalThis.__gdxNotificationLog.length = 100;
-  }
-}
-
-export function listNotifications(): NotificationLogEntry[] {
-  return [...(globalThis.__gdxNotificationLog ?? [])];
-}
+const NO_OPEN_ID_REASON = "Lark openId 未登録（管理システムのLark同期で設定）";
 
 function buildBody(schedule: Schedule, fromName?: string) {
   const dt = formatJstSlashDateTime(schedule.startAt);
@@ -108,46 +81,8 @@ function formatReportDate(value: string) {
   return parsed ? formatJstSlashDate(parsed) : value;
 }
 
-async function postIm(
-  openId: string,
-  body: string,
-): Promise<NotifyResult> {
-  try {
-    await postLarkApiWithTenantToken<unknown>(
-      "/im/v1/messages",
-      {
-        receive_id: openId,
-        msg_type: "text",
-        content: JSON.stringify({ text: body }),
-      },
-      { receive_id_type: "open_id" },
-    );
-    return { ok: true };
-  } catch (error) {
-    const larkError = toLarkApiError(error, "Lark通知を送信できませんでした");
-    return { ok: false, reason: larkError.message };
-  }
-}
-
-async function postInteractiveCard(
-  openId: string,
-  card: Record<string, unknown>,
-): Promise<NotifyResult> {
-  try {
-    await postLarkApiWithTenantToken<unknown>(
-      "/im/v1/messages",
-      {
-        receive_id: openId,
-        msg_type: "interactive",
-        content: JSON.stringify(card),
-      },
-      { receive_id_type: "open_id" },
-    );
-    return { ok: true };
-  } catch (error) {
-    const larkError = toLarkApiError(error, "Lark通知を送信できませんでした");
-    return { ok: false, reason: larkError.message };
-  }
+function textContent(body: string): string {
+  return JSON.stringify({ text: body });
 }
 
 export async function sendInvitation(
@@ -155,39 +90,17 @@ export async function sendInvitation(
   schedule: Schedule,
   fromName?: string,
 ): Promise<NotifyResult> {
-  const body = buildBody(schedule, fromName);
-  const recordResult = (delivered: boolean, reason?: string) => {
-    logEntry({
-      at: new Date().toISOString(),
-      to: { id: to.id, name: to.name },
-      scheduleId: schedule.id,
-      title: schedule.title,
-      delivered,
-      reason,
-    });
-  };
-
-  if (!to.larkOpenId) {
-    console.info("[lark/notify] skip (no larkOpenId)", {
-      to: to.name,
-      schedule: schedule.title,
-    });
-    recordResult(false, "Lark openId 未登録（社員マスタで設定）");
-    return { ok: false, reason: "no larkOpenId" };
-  }
-
-  const result = await postIm(to.larkOpenId, body);
-  if (result.ok) {
-    console.info("[lark/notify] delivered", {
-      to: to.name,
-      schedule: schedule.title,
-    });
-    recordResult(true);
-  } else {
-    console.warn("[lark/notify] failed", { to: to.name, reason: result.reason });
-    recordResult(false, result.reason);
-  }
-  return result;
+  return dispatchNotification({
+    kind: "invitation",
+    receiveId: to.larkOpenId ?? null,
+    receiveIdType: "open_id",
+    recipientName: to.name,
+    subject: schedule.title,
+    msgType: "text",
+    content: textContent(buildBody(schedule, fromName)),
+    relatedId: schedule.id,
+    skipReason: NO_OPEN_ID_REASON,
+  });
 }
 
 export async function sendScheduleChanged(
@@ -196,31 +109,17 @@ export async function sendScheduleChanged(
   after: Schedule,
   fromName?: string,
 ): Promise<NotifyResult> {
-  const body = buildScheduleChangedBody(before, after, fromName);
-  const recordResult = (delivered: boolean, reason?: string) => {
-    logEntry({
-      at: new Date().toISOString(),
-      to: { id: to.id, name: to.name },
-      scheduleId: after.id,
-      title: after.title,
-      delivered,
-      reason,
-      kind: "schedule_changed",
-    });
-  };
-
-  if (!to.larkOpenId) {
-    recordResult(false, "Lark openId 未登録（社員マスタで設定）");
-    return { ok: false, reason: "no larkOpenId" };
-  }
-
-  const result = await postIm(to.larkOpenId, body);
-  if (result.ok) {
-    recordResult(true);
-  } else {
-    recordResult(false, result.reason);
-  }
-  return result;
+  return dispatchNotification({
+    kind: "schedule_changed",
+    receiveId: to.larkOpenId ?? null,
+    receiveIdType: "open_id",
+    recipientName: to.name,
+    subject: after.title,
+    msgType: "text",
+    content: textContent(buildScheduleChangedBody(before, after, fromName)),
+    relatedId: after.id,
+    skipReason: NO_OPEN_ID_REASON,
+  });
 }
 
 function buildDailyReportBody(
@@ -275,8 +174,8 @@ function buildDailyReportCard(
 }
 
 /**
- * 日報提出時の Lark 通知。
- * 呼び出し側で管理者宛を優先し、評価環境では本人宛にフォールバックする。
+ * 日報提出時の Lark 通知（個人DM宛）。
+ * 送付先グループチャットが未設定の場合に管理者へ送る。
  */
 export async function sendDailyReportSubmitted(
   to: CalendarUser,
@@ -284,50 +183,84 @@ export async function sendDailyReportSubmitted(
   reportUserName: string,
   reportUrl?: string,
 ): Promise<NotifyResult> {
-  const body = buildDailyReportBody(report, reportUserName, reportUrl);
-  const recordResult = (delivered: boolean, reason?: string) => {
-    logEntry({
-      at: new Date().toISOString(),
-      to: { id: to.id, name: to.name },
-      scheduleId: report.id,
-      title: `日報 ${report.reportDate} ${reportUserName}`,
-      delivered,
-      reason,
-      kind: "daily_report",
-    });
-  };
-
+  const subject = `日報 ${report.reportDate} ${reportUserName}`;
   if (!to.larkOpenId) {
-    console.info("[lark/notify] daily-report skip (no larkOpenId)", {
-      to: to.name,
-      report: report.reportDate,
+    return dispatchNotification({
+      kind: "daily_report",
+      receiveId: null,
+      receiveIdType: "open_id",
+      recipientName: to.name,
+      subject,
+      msgType: "text",
+      content: textContent(buildDailyReportBody(report, reportUserName, reportUrl)),
+      relatedId: report.id,
+      skipReason: NO_OPEN_ID_REASON,
     });
-    recordResult(false, "Lark openId 未登録（社員マスタで設定）");
-    return { ok: false, reason: "no larkOpenId" };
   }
 
-  const result = reportUrl
-    ? await postInteractiveCard(
-        to.larkOpenId,
-        buildDailyReportCard(report, reportUserName, reportUrl),
-      )
-    : await postIm(to.larkOpenId, body);
-  const delivered =
-    result.ok || !reportUrl ? result : await postIm(to.larkOpenId, body);
-  if (delivered.ok) {
-    console.info("[lark/notify] daily-report delivered", {
-      to: to.name,
-      report: report.reportDate,
+  if (reportUrl) {
+    const cardResult = await dispatchNotification({
+      kind: "daily_report",
+      receiveId: to.larkOpenId ?? null,
+      receiveIdType: "open_id",
+      recipientName: to.name,
+      subject,
+      msgType: "interactive",
+      content: JSON.stringify(buildDailyReportCard(report, reportUserName, reportUrl)),
+      relatedId: report.id,
     });
-    recordResult(true);
-  } else {
-    console.warn("[lark/notify] daily-report failed", {
-      to: to.name,
-      reason: delivered.reason,
-    });
-    recordResult(false, delivered.reason);
+    if (cardResult.ok) return cardResult;
   }
-  return delivered;
+
+  return dispatchNotification({
+    kind: "daily_report",
+    receiveId: to.larkOpenId ?? null,
+    receiveIdType: "open_id",
+    recipientName: to.name,
+    subject,
+    msgType: "text",
+    content: textContent(buildDailyReportBody(report, reportUserName, reportUrl)),
+    relatedId: report.id,
+  });
+}
+
+/**
+ * 日報提出時の Lark 通知（グループチャット宛）。
+ * 送付先は管理画面「通知設定」で設定した chat_id。
+ * 事前に対象チャットへ本システムのボットを追加しておく必要がある。
+ */
+export async function sendDailyReportToChat(
+  chatId: string,
+  chatName: string,
+  report: DailyReport,
+  reportUserName: string,
+  reportUrl?: string,
+): Promise<NotifyResult> {
+  const subject = `日報 ${report.reportDate} ${reportUserName}`;
+  if (reportUrl) {
+    const cardResult = await dispatchNotification({
+      kind: "daily_report",
+      receiveId: chatId,
+      receiveIdType: "chat_id",
+      recipientName: chatName,
+      subject,
+      msgType: "interactive",
+      content: JSON.stringify(buildDailyReportCard(report, reportUserName, reportUrl)),
+      relatedId: report.id,
+    });
+    if (cardResult.ok) return cardResult;
+  }
+
+  return dispatchNotification({
+    kind: "daily_report",
+    receiveId: chatId,
+    receiveIdType: "chat_id",
+    recipientName: chatName,
+    subject,
+    msgType: "text",
+    content: textContent(buildDailyReportBody(report, reportUserName, reportUrl)),
+    relatedId: report.id,
+  });
 }
 
 function buildDailyReportReplyBody(
@@ -357,41 +290,15 @@ export async function sendDailyReportReply(
   if (reply.userId === to.id) {
     return { ok: false, reason: "self reply (skip)" };
   }
-  const body = buildDailyReportReplyBody(report, reply, fromName);
-  const recordResult = (delivered: boolean, reason?: string) => {
-    logEntry({
-      at: new Date().toISOString(),
-      to: { id: to.id, name: to.name },
-      scheduleId: reply.id,
-      title: `日報返信 ${report.reportDate}`,
-      delivered,
-      reason,
-      kind: "daily_report_reply",
-    });
-  };
-
-  if (!to.larkOpenId) {
-    console.info("[lark/notify] daily-report-reply skip (no larkOpenId)", {
-      to: to.name,
-      report: report.reportDate,
-    });
-    recordResult(false, "Lark openId 未登録（社員マスタで設定）");
-    return { ok: false, reason: "no larkOpenId" };
-  }
-
-  const result = await postIm(to.larkOpenId, body);
-  if (result.ok) {
-    console.info("[lark/notify] daily-report-reply delivered", {
-      to: to.name,
-      report: report.reportDate,
-    });
-    recordResult(true);
-  } else {
-    console.warn("[lark/notify] daily-report-reply failed", {
-      to: to.name,
-      reason: result.reason,
-    });
-    recordResult(false, result.reason);
-  }
-  return result;
+  return dispatchNotification({
+    kind: "daily_report_reply",
+    receiveId: to.larkOpenId ?? null,
+    receiveIdType: "open_id",
+    recipientName: to.name,
+    subject: `日報返信 ${report.reportDate}`,
+    msgType: "text",
+    content: textContent(buildDailyReportReplyBody(report, reply, fromName)),
+    relatedId: reply.id,
+    skipReason: NO_OPEN_ID_REASON,
+  });
 }

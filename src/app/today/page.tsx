@@ -3,7 +3,7 @@ import { CalendarDays } from "lucide-react";
 import { getSession } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
 import {
-  listSchedulesAsync,
+  listSchedulesInRangeAsync,
   listScheduleTypesAsync,
   listUsersAsync,
 } from "@/lib/schedule-store";
@@ -17,9 +17,11 @@ import {
   scheduleTypeForeground,
 } from "@/components/calendar/color-utils";
 import {
+  addJstDays,
   formatJstDateLabel,
   formatJstTime,
   isSameJstDay,
+  startOfJstDay,
 } from "@/lib/jst";
 
 export const dynamic = "force-dynamic";
@@ -32,9 +34,14 @@ export default async function TodayPage({
   searchParams: SearchParams;
 }) {
   const sp = await searchParams;
-  const session = await getSession();
-  const users = await listUsersAsync();
-  const types = await listScheduleTypesAsync();
+  const today = new Date();
+  const dayStart = startOfJstDay(today) ?? today;
+  const [session, users, types, todaySchedules] = await Promise.all([
+    getSession(),
+    listUsersAsync(),
+    listScheduleTypesAsync(),
+    listSchedulesInRangeAsync(dayStart, addJstDays(dayStart, 1)),
+  ]);
   const typeMap = new Map(types.map((t) => [t.id, t]));
 
   const selfId = sp.user && users.find((u) => u.id === sp.user)
@@ -42,9 +49,7 @@ export default async function TodayPage({
     : (users[0]?.id ?? "");
   const self = users.find((u) => u.id === selfId);
 
-  const today = new Date();
-  const all = await listSchedulesAsync();
-  const items = all
+  const items = todaySchedules
     .filter(
       (s) => s.userIds.includes(selfId) && isSameJstDay(s.startAt, today),
     )

@@ -147,6 +147,50 @@ CREATE TABLE calendar_user_sessions (
 
 Lark会議URL発行では、ログイン中ユーザー本人の `lark_access_token` を使います。他人の主カレンダーへ代理作成しません。
 
+### 7. カレンダー設定 (`calendar_settings`)
+
+管理画面から変更する設定をDBで管理します（Lark連携ルール §3「ハードコード禁止」準拠）。
+
+```sql
+CREATE TABLE calendar_settings (
+  key VARCHAR(100) PRIMARY KEY,
+  value JSONB NOT NULL,
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+| key | value の内容 |
+|---|---|
+| `display_hours` | `{ "startHour": 8, "endHour": 18 }`（日表示カレンダーの時間軸範囲） |
+| `daily_report_notification` | `{ "dailyReportChatId": "oc_...", "dailyReportChatName": "...", "dailyReportDmAdmins": true }`（日報通知の送付先） |
+
+### 8. Lark通知ログ (`calendar_notification_logs`)
+
+Lark通知の送信履歴とリトライ管理（Lark連携ルール §4.2 準拠）。
+送信に失敗した通知は 5分後 → 15分後 → 60分後 に自動再送します（`/api/notifications/retry` または管理画面の再送ボタン）。
+
+```sql
+CREATE TABLE calendar_notification_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  kind VARCHAR(40) NOT NULL,              -- invitation / schedule_changed / daily_report / daily_report_reply
+  receive_id TEXT,                        -- open_id または chat_id
+  receive_id_type VARCHAR(20) NOT NULL DEFAULT 'open_id',
+  recipient_name TEXT,
+  subject TEXT NOT NULL,
+  msg_type VARCHAR(20) NOT NULL DEFAULT 'text',
+  content TEXT,                           -- 再送用の送信ペイロード
+  related_id TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',  -- pending / sent / failed / skipped
+  error TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  next_retry_at TIMESTAMPTZ,
+  sent_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
 ## 初期データ
 
 マイグレーション時に以下の予定種別データを投入します。
