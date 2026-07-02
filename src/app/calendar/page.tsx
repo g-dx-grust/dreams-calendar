@@ -27,6 +27,7 @@ import {
   listUsersAsync,
 } from "@/lib/schedule-store";
 import { getCalendarSettingsAsync } from "@/lib/calendar-settings-store";
+import { maskPrivateSchedules } from "@/lib/schedule-visibility";
 import { getVisibleUserIds } from "@/lib/calendar-user-pref";
 import { getCurrentUserId } from "@/lib/self";
 import {
@@ -99,15 +100,23 @@ export default async function CalendarPage({
   const date = parseDate(sp.date);
 
   const interval = viewInterval(view, date);
-  const [session, allUsers, types, schedules, { startHour, endHour }, selfUserId] =
-    await Promise.all([
-      getSession(),
-      listUsersAsync(),
-      listScheduleTypesAsync(),
-      listSchedulesInRangeAsync(interval.start, interval.endExclusive),
-      getCalendarSettingsAsync(),
-      getCurrentUserId(),
-    ]);
+  const [
+    session,
+    allUsers,
+    types,
+    rawSchedules,
+    { startHour, endHour },
+    selfUserId,
+  ] = await Promise.all([
+    getSession(),
+    listUsersAsync(),
+    listScheduleTypesAsync(),
+    listSchedulesInRangeAsync(interval.start, interval.endExclusive),
+    getCalendarSettingsAsync(),
+    getCurrentUserId(),
+  ]);
+  // 非公開の予定は担当者以外に「予定あり」表示へ伏せる（サーバー側で実施）
+  const schedules = maskPrivateSchedules(rawSchedules, selfUserId);
   const currentUser = selfUserId
     ? allUsers.find((user) => user.id === selfUserId)
     : null;

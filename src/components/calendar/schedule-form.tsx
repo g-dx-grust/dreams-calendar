@@ -18,6 +18,7 @@ import {
 import { TimePicker15 } from "./time-picker-15";
 import {
   SCHEDULE_STATUS_LABEL,
+  SCHEDULE_VISIBILITY_LABEL,
   type CalendarUser,
   type ScheduleStatus,
   type ScheduleType,
@@ -30,6 +31,8 @@ const SCHEDULE_STATUSES = [
   "carried_over",
   "cancelled",
 ] as const satisfies readonly ScheduleStatus[];
+
+const SCHEDULE_VISIBILITIES = ["public", "private"] as const;
 
 const formSchema = z
   .object({
@@ -49,6 +52,7 @@ const formSchema = z
     location: z.string().max(200).optional().or(z.literal("")),
     memo: z.string().max(2000).optional().or(z.literal("")),
     status: z.enum(SCHEDULE_STATUSES),
+    visibility: z.enum(SCHEDULE_VISIBILITIES),
     actualStartAt: z.string().optional().or(z.literal("")),
     actualEndAt: z.string().optional().or(z.literal("")),
     actualMinutes: z.string().optional().or(z.literal("")),
@@ -217,6 +221,7 @@ export function ScheduleForm({
       location: "",
       memo: "",
       status: "planned",
+      visibility: "public",
       actualStartAt: "",
       actualEndAt: "",
       actualMinutes: "",
@@ -364,6 +369,7 @@ export function ScheduleForm({
       if (values.location) fd.set("location", values.location);
       if (values.memo) fd.set("memo", values.memo);
       fd.set("status", values.status);
+      fd.set("visibility", values.visibility);
       const actualStartAt = values.actualStartAt
         ? toJstOffsetDateTimeLocal(values.actualStartAt)
         : null;
@@ -538,6 +544,19 @@ export function ScheduleForm({
             </option>
           ))}
         </Select>
+      </Field>
+
+      <Field label="公開範囲" required error={errors.visibility?.message}>
+        <Select {...register("visibility")}>
+          {SCHEDULE_VISIBILITIES.map((item) => (
+            <option key={item} value={item}>
+              {SCHEDULE_VISIBILITY_LABEL[item]}
+            </option>
+          ))}
+        </Select>
+        <p className="text-[12px] text-[var(--color-text-mid)]">
+          非公開にすると、担当者以外には「予定あり」（時間帯のみ）と表示されます。
+        </p>
       </Field>
 
       <div className="space-y-1.5">

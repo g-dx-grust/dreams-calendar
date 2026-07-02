@@ -5,7 +5,11 @@ import { getSession } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
 import { ScheduleForm } from "@/components/calendar/schedule-form";
 import { DeleteScheduleButton } from "@/components/calendar/delete-button";
-import { SCHEDULE_STATUS_LABEL } from "@/components/calendar/types";
+import {
+  SCHEDULE_STATUS_LABEL,
+  SCHEDULE_VISIBILITY_LABEL,
+} from "@/components/calendar/types";
+import { canViewScheduleDetails } from "@/lib/schedule-visibility";
 import {
   scheduleTypeBackground,
   scheduleTypeForeground,
@@ -36,10 +40,25 @@ export default async function ScheduleDetailPage({
   const schedule = await getScheduleAsync(id);
   if (!schedule) notFound();
 
-  const session = await getSession();
-  const users = await listUsersAsync();
-  const types = await listScheduleTypesAsync();
-  const selfUserId = await getCurrentUserId();
+  const [session, users, types, selfUserId] = await Promise.all([
+    getSession(),
+    listUsersAsync(),
+    listScheduleTypesAsync(),
+    getCurrentUserId(),
+  ]);
+
+  // 非公開の予定は担当者以外に詳細を表示しない（Larkカレンダー踏襲）
+  if (!canViewScheduleDetails(schedule, selfUserId)) {
+    return (
+      <PrivateScheduleNotice
+        session={session}
+        users={users}
+        selfUserId={selfUserId}
+        timeRange={buildTimeRange(schedule.startAt, schedule.endAt)}
+      />
+    );
+  }
+
   const type = types.find((item) => item.id === schedule.typeId) ?? null;
   const assignees = schedule.userIds
     .map((userId) => users.find((user) => user.id === userId))
@@ -50,16 +69,7 @@ export default async function ScheduleDetailPage({
   const fmtDateTimeLocal = (d?: Date) => formatJstDateTimeLocal(d);
   const fmtDateLabel = (d: Date) => formatJstDateLabel(d);
 
-  const timeRange = (() => {
-    const sameDay = isSameJstDay(schedule.startAt, schedule.endAt);
-    const startDate = fmtDateLabel(schedule.startAt);
-    const endDate = fmtDateLabel(schedule.endAt);
-    const startTime = fmtTime(schedule.startAt);
-    const endTime = fmtTime(schedule.endAt);
-    return sameDay
-      ? `${startDate} ${startTime} 〜 ${endTime}`
-      : `${startDate} ${startTime} 〜 ${endDate} ${endTime}`;
-  })();
+  const timeRange = buildTimeRange(schedule.startAt, schedule.endAt);
 
   const update = updateScheduleAction.bind(null, id);
   const caseParts: string[] = [];
@@ -185,6 +195,10 @@ export default async function ScheduleDetailPage({
                 label="ステータス"
                 value={SCHEDULE_STATUS_LABEL[schedule.status]}
               />
+              <Row
+                label="公開範囲"
+                value={SCHEDULE_VISIBILITY_LABEL[schedule.visibility ?? "public"]}
+              />
               <Row label="作業時間（実施時間）" value={actualMinutesLabel} />
               <Row label="作業開始・終了" value={actualRange || "—"} />
               <Row label="Lark同期" value={syncStatusLabel} />
@@ -256,6 +270,7 @@ export default async function ScheduleDetailPage({
                 location: schedule.location ?? "",
                 memo: schedule.memo ?? "",
                 status: schedule.status,
+                visibility: schedule.visibility ?? "public",
                 actualStartAt: fmtDateTimeLocal(schedule.actualStartAt),
                 actualEndAt: fmtDateTimeLocal(schedule.actualEndAt),
                 actualMinutes: schedule.actualMinutes
@@ -271,6 +286,64 @@ export default async function ScheduleDetailPage({
               cancelHref="/calendar"
               action={update}
             />
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function buildTimeRange(startAt: Date, endAt: Date) {
+  const sameDay = isSameJstDay(startAt, endAt);
+  const startDate = formatJstDateLabel(startAt);
+  const endDate = formatJstDateLabel(endAt);
+  const startTime = formatJstTime(startAt);
+  const endTime = formatJstTime(endAt);
+  return sameDay
+    ? `${startDate} ${startTime} 〜 ${endTime}`
+    : `${startDate} ${startTime} 〜 ${endDate} ${endTime}`;
+}
+
+function PrivateScheduleNotice({
+  session,
+  users,
+  selfUserId,
+  timeRange,
+}: {
+  session: Awaited<ReturnType<typeof getSession>>;
+  users: Awaited<ReturnType<typeof listUsersAsync>>;
+  selfUserId: string | null;
+  timeRange: string;
+}) {
+  return (
+    <div className="min-h-screen flex flex-col">
+      <AppHeader user={session} users={users} selfUserId={selfUserId} />
+      <main className="flex-1 px-6 py-5">
+        <div
+          className="mx-auto"
+          style={{ maxWidth: "var(--width-content-max)" }}
+        >
+          <Link
+            href="/calendar"
+            className="inline-flex items-center gap-1 text-[13px] text-[var(--color-text-mid)] hover:text-[var(--color-text-strong)] mb-3"
+          >
+            <ChevronLeft size={14} />
+            カレンダーへ戻る
+          </Link>
+
+          <div className="bg-white border border-[var(--color-border)] rounded-[var(--radius-m)] p-5">
+            <h1 className="text-[16px] font-bold text-[var(--color-text-strong)]">
+              非公開の予定
+            </h1>
+            <p className="mt-2 text-[13px] text-[var(--color-text-mid)]">
+              この予定は非公開に設定されています。詳細は担当者のみ確認できます。
+            </p>
+            <dl className="mt-3">
+              <dt className="text-[12px] text-[var(--color-text-mid)]">時間</dt>
+              <dd className="text-[14px] text-[var(--color-text-strong)]">
+                {timeRange}
+              </dd>
+            </dl>
           </div>
         </div>
       </main>

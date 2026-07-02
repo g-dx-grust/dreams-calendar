@@ -182,7 +182,12 @@ export function SchedulePopover({
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="flex items-center justify-end gap-0.5 px-2 py-1.5 border-b border-[var(--color-border)]">
-        {schedule.status !== "done" ? (
+        {schedule.isMasked ? (
+          <span className="mr-auto pl-2 text-[12px] text-[var(--color-text-mid)]">
+            非公開の予定（詳細は担当者のみ）
+          </span>
+        ) : null}
+        {!schedule.isMasked && schedule.status !== "done" ? (
           <button
             type="button"
             onClick={() => {
@@ -197,24 +202,28 @@ export function SchedulePopover({
             完了
           </button>
         ) : null}
-        <Link
-          href={`/calendar/${schedule.id}`}
-          aria-label="編集する"
-          title="編集する"
-          className="inline-flex items-center justify-center w-8 h-8 rounded-[var(--radius-s)] text-[var(--color-text-mid)] hover:bg-[var(--color-background)] hover:text-[var(--color-text-strong)]"
-        >
-          <Pencil size={16} />
-        </Link>
-        <button
-          type="button"
-          onClick={onDelete}
-          disabled={isDeleting}
-          aria-label="削除する"
-          title="削除する"
-          className="inline-flex items-center justify-center w-8 h-8 rounded-[var(--radius-s)] text-[var(--color-text-mid)] hover:bg-[var(--color-background)] hover:text-[var(--color-danger)] disabled:opacity-50"
-        >
-          <Trash2 size={16} />
-        </button>
+        {!schedule.isMasked ? (
+          <Link
+            href={`/calendar/${schedule.id}`}
+            aria-label="編集する"
+            title="編集する"
+            className="inline-flex items-center justify-center w-8 h-8 rounded-[var(--radius-s)] text-[var(--color-text-mid)] hover:bg-[var(--color-background)] hover:text-[var(--color-text-strong)]"
+          >
+            <Pencil size={16} />
+          </Link>
+        ) : null}
+        {!schedule.isMasked ? (
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={isDeleting}
+            aria-label="削除する"
+            title="削除する"
+            className="inline-flex items-center justify-center w-8 h-8 rounded-[var(--radius-s)] text-[var(--color-text-mid)] hover:bg-[var(--color-background)] hover:text-[var(--color-danger)] disabled:opacity-50"
+          >
+            <Trash2 size={16} />
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={onClose}

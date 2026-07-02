@@ -46,6 +46,7 @@ type LarkCalendarEvent = {
   end_time?: LarkCalendarEventTime;
   location?: { name?: string };
   status?: string;
+  visibility?: string;
 };
 
 type LarkCalendarEventTime = {
@@ -60,7 +61,7 @@ type LarkCalendarEventBody = {
   start_time: { timestamp: string; timezone: "Asia/Tokyo" };
   end_time: { timestamp: string; timezone: "Asia/Tokyo" };
   location?: { name: string };
-  visibility: "default";
+  visibility: "default" | "private";
   free_busy_status: "busy";
 };
 
@@ -103,7 +104,8 @@ function toLarkEventBody(schedule: Schedule): LarkCalendarEventBody {
       timestamp: String(Math.floor(schedule.endAt.getTime() / 1000)),
       timezone: "Asia/Tokyo",
     },
-    visibility: "default",
+    // 非公開はLark側でも非公開として同期する
+    visibility: schedule.visibility === "private" ? "private" : "default",
     free_busy_status: "busy",
   };
   if (description) body.description = description;
@@ -432,6 +434,8 @@ async function upsertScheduleFromLarkEvent(
     location: event.location?.name || undefined,
     memo: event.description || undefined,
     status: normalizeLarkStatus(event.status),
+    visibility:
+      event.visibility === "private" ? ("private" as const) : ("public" as const),
     larkEventId,
     syncSource: "lark" as const,
     syncStatus: "synced" as const,

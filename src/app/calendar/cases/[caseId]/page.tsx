@@ -17,6 +17,7 @@ import {
 import { listProjectScheduleLogsByCaseAsync } from "@/lib/project-schedule-log-store";
 import { getSession } from "@/lib/session";
 import { getCurrentUserId } from "@/lib/self";
+import { maskPrivateSchedules } from "@/lib/schedule-visibility";
 import {
   formatJstMonthDayLabel,
   formatJstTime,
@@ -33,22 +34,26 @@ export default async function CalendarCasePage({
   const { caseId: rawCaseId } = await params;
   const caseId = Number(rawCaseId);
   const isValidCaseId = Number.isInteger(caseId) && caseId > 0;
-  const session = await getSession();
-  const users = await listUsersAsync();
-  const types = await listScheduleTypesAsync();
-  const selfUserId = await getCurrentUserId();
+  const [session, users, types, selfUserId, allSchedules, logs] =
+    await Promise.all([
+      getSession(),
+      listUsersAsync(),
+      listScheduleTypesAsync(),
+      getCurrentUserId(),
+      isValidCaseId ? listSchedulesAsync() : Promise.resolve([]),
+      isValidCaseId
+        ? listProjectScheduleLogsByCaseAsync(caseId)
+        : Promise.resolve([]),
+    ]);
 
-  const schedules = isValidCaseId
-    ? (await listSchedulesAsync())
-        .filter((schedule) => schedule.caseId === caseId)
-        .sort((a, b) => a.startAt.getTime() - b.startAt.getTime())
-    : [];
-  const logs = isValidCaseId
-    ? await listProjectScheduleLogsByCaseAsync(caseId)
-    : [];
-  const first = schedules[0];
+  const caseSchedules = allSchedules
+    .filter((schedule) => schedule.caseId === caseId)
+    .sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
+  const first = caseSchedules[0];
   const caseNumber = first?.caseNumber ?? `ID ${rawCaseId}`;
   const caseName = first?.caseName ?? "案件名未取得";
+  // 非公開の予定は担当者以外に「予定あり」表示へ伏せる
+  const schedules = maskPrivateSchedules(caseSchedules, selfUserId);
   const kanriSystemUrl =
     process.env.NEXT_PUBLIC_KANRI_SYSTEM_URL?.replace(/\/+$/, "") ?? "";
   const kanriHref =

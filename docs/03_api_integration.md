@@ -111,6 +111,12 @@ POST /api/calendar/meeting-url/lark
 `/api/lark/calendar/sync` のpush/bothや個別flushは、本番環境では `LARK_SYNC_SECRET` を必須にします。ログインユーザー本人のpull同期はセッションで許可します。開発環境のみ、secret未設定でもローカル確認を許可します。
 LarkのカレンダーIDは環境変数で固定せず、ログイン済みユーザーの user access token で主カレンダーIDを取得し、`calendar_user_profiles.lark_calendar_id` にキャッシュします。Lark予定を取り込むpull同期では対象ユーザーを `userId` で指定し、未指定時はログイン中ユーザー本人を対象にします。
 
+### 5.3.1 公開範囲（公開 / 非公開）の同期
+
+- 予定の `visibility` はLarkカレンダーの公開範囲を踏襲します。アプリで「非公開」にした予定はLarkへも `visibility: private` で同期し、Larkから取り込んだ非公開予定はアプリでも非公開になります。
+- 非公開の予定は、担当者本人以外には「予定あり」（時間帯のみ）と表示します。マスキングはサーバー側で行い、タイトル・場所・メモ・案件情報はブラウザへ送信しません。
+- 非公開予定の編集・完了・削除は担当者のみ実行できます（Server Action側でガード）。
+
 ### 5.4 Lark IM 通知
 
 - 予定の招待・変更通知は、対象メンバーの `lark_open_id` 宛にダイレクトメッセージで送信します（`/im/v1/messages`、tenant token使用）。

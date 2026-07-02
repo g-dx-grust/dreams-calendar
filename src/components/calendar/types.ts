@@ -24,6 +24,15 @@ export type ScheduleStatus =
 export type CalendarSyncSource = "app" | "lark";
 export type CalendarSyncStatus = "pending" | "synced" | "failed" | "ignored";
 
+// Larkカレンダーの予定公開範囲を踏襲（公開 / 非公開）
+// see: docs/02_database_schema.md schedules.visibility
+export type ScheduleVisibility = "public" | "private";
+
+export const SCHEDULE_VISIBILITY_LABEL: Record<ScheduleVisibility, string> = {
+  public: "公開",
+  private: "非公開",
+};
+
 export const SCHEDULE_STATUS_LABEL: Record<ScheduleStatus, string> = {
   planned: "予定",
   in_progress: "進行中",
@@ -69,6 +78,8 @@ export type Schedule = {
   location?: string;
   memo?: string;
   status: ScheduleStatus;
+  visibility?: ScheduleVisibility; // 未設定は public 扱い
+  isMasked?: boolean; // 非公開予定を閲覧者向けに伏せた表示であることを示す
   larkEventId?: string;
   syncSource: CalendarSyncSource;
   syncStatus: CalendarSyncStatus;

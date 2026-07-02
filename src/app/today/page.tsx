@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { CalendarDays } from "lucide-react";
 import { getSession } from "@/lib/session";
+import { getCurrentUserId } from "@/lib/self";
+import { maskPrivateSchedules } from "@/lib/schedule-visibility";
 import { AppHeader } from "@/components/layout/app-header";
 import {
   listSchedulesInRangeAsync,
@@ -36,12 +38,16 @@ export default async function TodayPage({
   const sp = await searchParams;
   const today = new Date();
   const dayStart = startOfJstDay(today) ?? today;
-  const [session, users, types, todaySchedules] = await Promise.all([
-    getSession(),
-    listUsersAsync(),
-    listScheduleTypesAsync(),
-    listSchedulesInRangeAsync(dayStart, addJstDays(dayStart, 1)),
-  ]);
+  const [session, users, types, rawTodaySchedules, viewerUserId] =
+    await Promise.all([
+      getSession(),
+      listUsersAsync(),
+      listScheduleTypesAsync(),
+      listSchedulesInRangeAsync(dayStart, addJstDays(dayStart, 1)),
+      getCurrentUserId(),
+    ]);
+  // 非公開の予定は閲覧者（ログイン中ユーザー）以外に詳細を出さない
+  const todaySchedules = maskPrivateSchedules(rawTodaySchedules, viewerUserId);
   const typeMap = new Map(types.map((t) => [t.id, t]));
 
   const selfId = sp.user && users.find((u) => u.id === sp.user)

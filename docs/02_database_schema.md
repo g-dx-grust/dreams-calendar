@@ -26,6 +26,8 @@ CREATE TABLE schedules (
   memo TEXT,
   status VARCHAR(30) NOT NULL DEFAULT 'planned'
     CHECK (status IN ('planned', 'in_progress', 'done', 'carried_over', 'cancelled')),
+  visibility VARCHAR(20) NOT NULL DEFAULT 'public'
+    CHECK (visibility IN ('public', 'private')),  -- 公開範囲（Larkカレンダー踏襲。非公開は担当者以外に「予定あり」表示のみ）
   actual_start_at TIMESTAMPTZ,
   actual_end_at TIMESTAMPTZ,
   actual_minutes INTEGER,

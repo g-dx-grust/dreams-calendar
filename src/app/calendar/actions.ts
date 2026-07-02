@@ -21,7 +21,11 @@ import {
 import { sendInvitation, sendScheduleChanged } from "@/lib/lark/notify";
 import { deleteScheduleFromLark } from "@/lib/lark/calendar-sync";
 import { getCurrentUserId } from "@/lib/self";
+import { canViewScheduleDetails } from "@/lib/schedule-visibility";
 import type { Schedule } from "@/components/calendar/types";
+
+const PRIVATE_SCHEDULE_EDIT_ERROR =
+  "非公開の予定は担当者のみ変更できます。担当者に変更を依頼してください。";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -56,6 +60,7 @@ const scheduleSchema = z
     status: z
       .enum(["planned", "in_progress", "done", "carried_over", "cancelled"])
       .optional(),
+    visibility: z.enum(["public", "private"]).optional(),
     actualStartAt: z.string().optional(),
     actualEndAt: z.string().optional(),
     actualMinutes: z.preprocess((value) => {
@@ -121,6 +126,7 @@ function parseForm(formData: FormData) {
     location: formData.get("location") ?? undefined,
     memo: formData.get("memo") ?? undefined,
     status: formData.get("status") ?? undefined,
+    visibility: formData.get("visibility") ?? undefined,
     actualStartAt: formData.get("actualStartAt") ?? undefined,
     actualEndAt: formData.get("actualEndAt") ?? undefined,
     actualMinutes: formData.get("actualMinutes") ?? undefined,
@@ -250,6 +256,7 @@ export async function createScheduleAction(
     location: parsed.data.location || undefined,
     memo: parsed.data.memo || undefined,
     status: parsed.data.status ?? "planned",
+    visibility: parsed.data.visibility ?? "public",
     actualStartAt: parsed.data.actualStartAt
       ? new Date(parsed.data.actualStartAt)
       : null,
@@ -288,6 +295,10 @@ export async function updateScheduleAction(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "入力エラー" };
   }
   const before = await getScheduleAsync(id);
+  const editorId = await getCurrentUserId();
+  if (before && !canViewScheduleDetails(before, editorId)) {
+    return { ok: false, error: PRIVATE_SCHEDULE_EDIT_ERROR };
+  }
   let updated: Schedule | null;
   try {
     updated = await updateScheduleAsync(id, {
@@ -300,6 +311,7 @@ export async function updateScheduleAction(
     location: parsed.data.location || undefined,
     memo: parsed.data.memo || undefined,
     status: parsed.data.status ?? "planned",
+    visibility: parsed.data.visibility ?? "public",
     actualStartAt: parsed.data.actualStartAt
       ? new Date(parsed.data.actualStartAt)
       : null,
@@ -344,6 +356,10 @@ export async function updateScheduleAction(
 
 export async function deleteScheduleAction(id: string): Promise<void> {
   const before = await getScheduleAsync(id);
+  const editorId = await getCurrentUserId();
+  if (before && !canViewScheduleDetails(before, editorId)) {
+    redirect("/calendar");
+  }
   if (before?.larkEventId) {
     await deleteScheduleFromLark(before);
   }
@@ -373,6 +389,10 @@ export async function moveScheduleAction(input: {
   if (!parsed.success) return { ok: false, error: "入力エラー" };
 
   const before = await getScheduleAsync(parsed.data.id);
+  const editorId = await getCurrentUserId();
+  if (before && !canViewScheduleDetails(before, editorId)) {
+    return { ok: false, error: PRIVATE_SCHEDULE_EDIT_ERROR };
+  }
   const beforeIds = new Set(before?.userIds ?? []);
 
   // 行を変える場合は userIds を置換
@@ -446,6 +466,10 @@ export async function completeScheduleAction(
 
   const before = await getScheduleAsync(id);
   if (!before) return { ok: false, error: "予定が見つかりませんでした" };
+  const editorId = await getCurrentUserId();
+  if (!canViewScheduleDetails(before, editorId)) {
+    return { ok: false, error: PRIVATE_SCHEDULE_EDIT_ERROR };
+  }
 
   const actualStartAt = before.actualStartAt ?? before.startAt;
   const actualEndAt = new Date(parsed.data.actualEndAt);

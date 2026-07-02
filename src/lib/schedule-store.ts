@@ -26,6 +26,7 @@ import type {
   Schedule,
   ScheduleStatus,
   ScheduleType,
+  ScheduleVisibility,
 } from "@/components/calendar/types";
 
 type SerializedSchedule = Omit<
@@ -52,6 +53,7 @@ type ScheduleRow = {
   location: string | null;
   memo: string | null;
   status: ScheduleStatus;
+  visibility?: string | null;
   actual_start_at: string | null;
   actual_end_at: string | null;
   actual_minutes: number | null;
@@ -68,7 +70,7 @@ type ScheduleRow = {
 const SCHEDULE_BASE_SELECT =
   "id,title,start_at,end_at,user_id,co_user_ids,case_id,case_number,schedule_type_id,location,memo,status,actual_start_at,actual_end_at,actual_minutes,lark_event_id,sync_source,sync_status,sync_error,last_synced_at,cases(case_name)";
 const SCHEDULE_SELECT =
-  "id,title,start_at,end_at,user_id,co_user_ids,case_id,case_number,schedule_type_id,location,memo,status,actual_start_at,actual_end_at,actual_minutes,actual_memo,online_meeting_url,lark_event_id,sync_source,sync_status,sync_error,last_synced_at,cases(case_name)";
+  "id,title,start_at,end_at,user_id,co_user_ids,case_id,case_number,schedule_type_id,location,memo,status,visibility,actual_start_at,actual_end_at,actual_minutes,actual_memo,online_meeting_url,lark_event_id,sync_source,sync_status,sync_error,last_synced_at,cases(case_name)";
 
 export class ScheduleStoreError extends Error {
   constructor(message: string) {
@@ -135,8 +137,8 @@ function isUndefinedColumnError(error: { code?: string; message?: string } | nul
 
 function missingOptionalScheduleColumns(message?: string) {
   if (!message) return [];
-  return (["actual_memo", "online_meeting_url"] as const).filter((column) =>
-    message.includes(column),
+  return (["actual_memo", "online_meeting_url", "visibility"] as const).filter(
+    (column) => message.includes(column),
   );
 }
 
@@ -149,7 +151,9 @@ function stripMissingOptionalPayload(
 
   const next = { ...payload };
   for (const column of missing) {
-    if (next[column] != null) {
+    // visibility の既定値（public）はカラム未適用でも安全に落とせる
+    const isStrippableDefault = column === "visibility" && next[column] === "public";
+    if (next[column] != null && !isStrippableDefault) {
       throw new ScheduleStoreError(
         "予定の保存に必要なDBカラムが未適用です。Supabaseマイグレーションを反映してから再度お試しください。",
       );
@@ -179,6 +183,7 @@ function hydrateRow(row: ScheduleRow): Schedule {
     location: row.location ?? undefined,
     memo: row.memo ?? undefined,
     status: row.status,
+    visibility: row.visibility === "private" ? "private" : "public",
     isAllDay: false,
     actualStartAt: row.actual_start_at
       ? new Date(row.actual_start_at)
@@ -356,6 +361,7 @@ export type ScheduleInput = {
   location?: string;
   memo?: string;
   status?: ScheduleStatus;
+  visibility?: ScheduleVisibility;
   larkEventId?: string | null;
   syncSource?: CalendarSyncSource;
   syncStatus?: CalendarSyncStatus;
@@ -387,6 +393,7 @@ export function createSchedule(input: ScheduleInput): Schedule {
     location: input.location,
     memo: input.memo,
     status: input.status ?? "planned",
+    visibility: input.visibility ?? "public",
     larkEventId: input.larkEventId ?? undefined,
     syncSource: input.syncSource ?? "app",
     syncStatus: input.syncStatus ?? "pending",
@@ -417,6 +424,7 @@ function buildSchedulePayload(input: ScheduleInput) {
     location: input.location ?? null,
     memo: input.memo ?? null,
     status: input.status ?? "planned",
+    visibility: input.visibility ?? "public",
     actual_start_at: input.actualStartAt?.toISOString() ?? null,
     actual_end_at: input.actualEndAt?.toISOString() ?? null,
     actual_minutes: input.actualMinutes ?? null,
@@ -490,6 +498,7 @@ export function updateSchedule(
       ? { memo: patch.memo || undefined }
       : {}),
     ...(patch.status !== undefined ? { status: patch.status } : {}),
+    ...(patch.visibility !== undefined ? { visibility: patch.visibility } : {}),
     ...(patch.larkEventId !== undefined
       ? { larkEventId: patch.larkEventId || undefined }
       : {}),
@@ -540,6 +549,7 @@ function buildSchedulePatch(patch: Partial<ScheduleInput>) {
   if (patch.location !== undefined) payload.location = patch.location || null;
   if (patch.memo !== undefined) payload.memo = patch.memo || null;
   if (patch.status !== undefined) payload.status = patch.status;
+  if (patch.visibility !== undefined) payload.visibility = patch.visibility;
   if (patch.actualStartAt !== undefined) {
     payload.actual_start_at = patch.actualStartAt?.toISOString() ?? null;
   }
